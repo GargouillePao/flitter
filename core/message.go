@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 /*(NULL)*/
@@ -57,6 +58,7 @@ type Message interface {
 	GetInfo() (info MessageInfo)
 	SetContent(buf []byte)
 	GetContent() (buf []byte)
+	String() string
 }
 
 func NewMessage(info MessageInfo, content []byte) Message {
@@ -82,6 +84,12 @@ func (m *message) SetContent(buf []byte) {
 func (m *message) GetContent() (buf []byte) {
 	buf = m.content
 	return
+}
+
+func (m *message) String() string {
+	infostr := strings.Join(strings.Split(fmt.Sprintf("%v", m.info), "\n"), "\n\t")
+	str := fmt.Sprintf("Message[\n\tinfo:%s\n\tcontent:%s\n]", infostr, m.content)
+	return str
 }
 
 type MessageInfo interface {
@@ -149,14 +157,11 @@ func (m *messageInfo) Info() (action MessageAction, state MessageState) {
 }
 
 func (m messageInfo) String() string {
-	str := fmt.Sprintf("MsgInfo:[action:%v,state:%v]", m.action, m.state)
+	str := fmt.Sprintf("MsgInfo[\n\taction:%v\n\tstate:%v\n]", m.action, m.state)
 	return str
 }
 func (m messageInfo) Size() int {
 	return m.size
-}
-func (m messageInfo) Resize(size int) {
-	m.size = size
 }
 
 /*(NULL)*/

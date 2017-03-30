@@ -11,7 +11,6 @@ type Serializable interface {
 	Write(buf []byte) (int, error)
 
 	Size() int
-	Resize(size int)
 }
 type Serializer struct {
 }
@@ -35,10 +34,9 @@ func (s *Serializer) Encode(seris Serializable) (int, []byte, error) {
 func (s *Serializer) Decode(seris Serializable, buf []byte) (int, error) {
 	size, err := seris.Write(buf)
 	if err != nil {
-		seris.Resize(size)
-		return size, nil
-	} else {
 		return 0, err
+	} else {
+		return size, nil
 	}
 }
 func (s *Serializer) Serialize(bufs ...[]byte) []byte {

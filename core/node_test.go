@@ -1,11 +1,9 @@
 package core
 
 import (
-	"fmt"
 	utils "github.com/GargouillePao/flitter/utils"
 	"net"
 	"testing"
-	"time"
 )
 
 func Test_NetHostPort(t *testing.T) {
@@ -88,6 +86,7 @@ func Test_NodeInfo_Serialize(t *testing.T) {
 func Test_Node(t *testing.T) {
 	t.Log(utils.Norf("Start Node"))
 	info := NewNodeInfo()
+	info.SetAddr("127.0.0.1", "8090")
 	node, err := NewNode(info)
 	if node != nil && err == nil {
 		t.Log(utils.Infof("Node Create Succeed"))
@@ -100,8 +99,7 @@ func Test_Node(t *testing.T) {
 
 func Test_Node_Children(t *testing.T) {
 	t.Log(utils.Norf("Start Node Children"))
-	info := NewNodeInfo()
-	node, _ := NewNode(info)
+	node, _ := NewNode(NewNodeInfo())
 	child1 := NewNodeInfo()
 	child2 := NewNodeInfo()
 	child3 := NewNodeInfo()

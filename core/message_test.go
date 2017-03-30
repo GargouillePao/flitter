@@ -54,3 +54,30 @@ func Test_MessageInfo_Serialize(t *testing.T) {
 	}
 	t.Log(utils.Norf("End MsgInfo Serialize"))
 }
+
+func Test_Message_Serialize(t *testing.T) {
+	t.Log(utils.Norf("Start MsgInfo Serialize"))
+	info := NewMessageInfo()
+	info.SetAcion(MA_JoinGlobal)
+	info.SetState(MS_Probe)
+	content := []byte("Hello")
+	msg := NewMessage(info, content)
+	serializer := NewSerializer()
+	_, buf, _ := serializer.Encode(info)
+	buf = append(buf, msg.GetContent()...)
+
+	info = NewMessageInfo()
+	n, err := serializer.Decode(info, buf)
+	if err != nil {
+		t.Log(utils.Errf("%v", err))
+		t.Fail()
+	}
+	ncontent := buf[n:]
+	if string(ncontent) != string(content) {
+		t.Logf(utils.Errf("Err and now info is:%s.%v.%v", ncontent, n, info.Size()))
+		t.Fail()
+	} else {
+		t.Logf(utils.Infof("msg now is:%s", ncontent))
+	}
+	t.Log(utils.Norf("End MsgInfo Serialize"))
+}

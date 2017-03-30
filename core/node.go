@@ -7,25 +7,23 @@ import (
 	zmq "github.com/pebbe/zmq4"
 	"net"
 	"path"
+	"strconv"
 	"strings"
 )
 
 /*(NULL)*/
 type Node interface {
-	/** handle the message of upSender */
+	/** handle the message of sender */
 	SendToLeader(message Message) error
-	/** handle the message of downSender */
-	SendToChildren(message Message) error
-	/** handle the message og upReceiver */
+	/** handle the message of publisher */
+	BroadcastToChildren(message Message) error
+	/** handle the message og subscriber */
 	ReceiveFromLeader() (Message, error)
-	/** handle the message of the downReceiver */
+	/** handle the message of the receiver */
 	ReceiveFromChilren() (Message, error)
-	/** bind  downReceiver and upReceiver */
+	/** bind  receiver and subscriber */
 	SetChildren(children []NodeInfo)
-	ConnectChildren() error
-	ConnectLeader() error
 	SetLeader(leader NodeInfo) error
-	Bind() error
 	Close()
 	String() string
 }
@@ -37,68 +35,77 @@ type node struct {
 	children           []NodeInfo
 	oldLeaderEndpoints []string
 	oldChildEndpoints  []string
-	upSender           *zmq.Socket
-	downSender         *zmq.Socket
-	upReceiver         *zmq.Socket
-	downReceiver       *zmq.Socket
+	sender             *zmq.Socket
+	publisher          *zmq.Socket
+	subscriber         *zmq.Socket
+	receiver           *zmq.Socket
 }
 
 func NewNode(info NodeInfo) (Node, error) {
-	upSender, err := zmq.NewSocket(zmq.DEALER)
+	sender, err := zmq.NewSocket(zmq.DEALER)
 	if err != nil {
 		return nil, err
 	}
-	downSender, err := zmq.NewSocket(zmq.PUB)
+	receiver, err := zmq.NewSocket(zmq.DEALER)
 	if err != nil {
 		return nil, err
 	}
-	upReceiver, err := zmq.NewSocket(zmq.SUB)
+	publisher, err := zmq.NewSocket(zmq.PUB)
 	if err != nil {
 		return nil, err
 	}
-	downReceiver, err := zmq.NewSocket(zmq.DEALER)
+	subscriber, err := zmq.NewSocket(zmq.SUB)
 	if err != nil {
 		return nil, err
 	}
+
 	node := &node{
 		info:               info,
 		children:           make([]NodeInfo, 0),
 		oldLeaderEndpoints: make([]string, 0),
 		oldChildEndpoints:  make([]string, 0),
-		upSender:           upSender,
-		downSender:         downSender,
-		upReceiver:         upReceiver,
-		downReceiver:       downReceiver,
+		sender:             sender,
+		receiver:           receiver,
+		publisher:          publisher,
+		subscriber:         subscriber,
 	}
-	return node, nil
+	err = node.Bind()
+	return node, err
 }
 
-/** bind  downReceiver and upReceiver */
+/** bind  receiver and publisher the rport = 1+pport */
 func (n *node) Bind() error {
+	err := n.subscriber.SetSubscribe("")
+	if err != nil {
+		return err
+	}
 	endpoint, err := n.info.GetEndpoint(false)
 	if err != nil {
 		return err
 	}
+	pend := getPublisherEndpoint(endpoint)
 
-	err = n.downSender.Bind(endpoint)
+	rend, err := getReceiverEndpoint(endpoint)
 	if err != nil {
 		return err
 	}
-	n.upReceiver.SetSubscribe("")
-	n.downReceiver.Bind(endpoint)
+
+	err = n.publisher.Bind(pend)
+	if err != nil {
+		return err
+	}
+	err = n.receiver.Bind(rend)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (n *node) Close() {
-	n.upSender.Close()
-	n.downSender.Close()
-	n.upReceiver.Close()
-	n.downReceiver.Close()
-}
-
-/** handle the message of upSender */
-func (n *node) SendToLeader(message Message) error {
-	return errors.New("Err")
+	n.sender.Close()
+	n.publisher.Close()
+	n.subscriber.Close()
+	n.receiver.Close()
 }
 
 /**
@@ -108,14 +115,14 @@ connect children
 func (n *node) ConnectChildren() error {
 	errout := errors.New("No Child")
 	for _, oldEnds := range n.oldChildEndpoints {
-		n.downSender.Disconnect(oldEnds)
+		n.publisher.Disconnect(oldEnds)
 	}
 	for _, newChild := range n.children {
 		newEnd, err := newChild.GetEndpoint(true)
 		if err != nil {
 			continue
 		}
-		err = n.downSender.Connect(newEnd)
+		err = n.publisher.Connect(newEnd)
 		if err != nil {
 			continue
 		}
@@ -127,11 +134,20 @@ func (n *node) ConnectChildren() error {
 /**
 disconnect old leader
 connect leader
+if isPublish then do with subscriber or do with sender
 */
-func (n *node) ConnectLeader() error {
+func (n *node) ConnectLeader(isPublish bool) error {
 	errout := errors.New("No Leader")
 	for _, oldEnds := range n.oldLeaderEndpoints {
-		n.upReceiver.Disconnect(oldEnds)
+		if isPublish {
+			pubend := getPublisherEndpoint(oldEnds)
+			n.subscriber.Disconnect(pubend)
+		} else {
+			recvend, err := getReceiverEndpoint(oldEnds)
+			if err == nil {
+				n.sender.Disconnect(recvend)
+			}
+		}
 	}
 	if n.leader != nil {
 		var newEnd string
@@ -139,31 +155,57 @@ func (n *node) ConnectLeader() error {
 		if errout != nil {
 			return errout
 		}
-		errout = n.upReceiver.Connect(newEnd)
+		if isPublish {
+			pubend := getPublisherEndpoint(newEnd)
+			errout = n.subscriber.Connect(pubend)
+			if errout != nil {
+				return errout
+			}
+		} else {
+			recvend, errout := getReceiverEndpoint(newEnd)
+			if errout != nil {
+				return errout
+			}
+			errout = n.sender.Connect(recvend)
+			if errout != nil {
+				return errout
+			}
+		}
+
 	}
 	return errout
 }
 
-/** handle the message of downSender*/
-func (n *node) SendToChildren(msg Message) error {
-	//err := n.ConnectChildren()
-	err := sendMsg(n.downSender, msg)
+/** handle the message of sender */
+func (n *node) SendToLeader(msg Message) error {
+	err := n.ConnectLeader(false)
+	if err != nil {
+		return err
+	}
+	err = sendMsg(n.sender, msg)
 	return err
 }
 
-/** handle the message og upReceiver */
+/** handle the message of publisher*/
+func (n *node) BroadcastToChildren(msg Message) error {
+	err := sendMsg(n.publisher, msg)
+	return err
+}
+
+/** handle the message og subscriber */
 func (n *node) ReceiveFromLeader() (Message, error) {
-	err := n.ConnectLeader()
+	err := n.ConnectLeader(true)
 	if err != nil {
 		return nil, err
 	}
-	msg, err := receiveMsg(n.upReceiver)
+	msg, err := receiveMsg(n.subscriber)
 	return msg, err
 }
 
-/** handle the message of the downReceiver */
+/** handle the message of the receiver */
 func (n *node) ReceiveFromChilren() (Message, error) {
-	return nil, errors.New("Err")
+	msg, err := receiveMsg(n.receiver)
+	return msg, err
 }
 
 /**
@@ -333,6 +375,23 @@ func (n nodeInfo) Size() int {
 
 func (n nodeInfo) Resize(size int) {
 	n.size = size
+}
+
+func getPublisherEndpoint(endpoint string) string {
+	return endpoint
+}
+
+func getReceiverEndpoint(endpoint string) (string, error) {
+	colon := strings.LastIndexAny(endpoint, ":")
+	if colon < 0 || colon >= len(endpoint)-1 {
+		return "", errors.New("Invalide endpoint")
+	}
+	str := endpoint[:colon+1]
+	port, err := strconv.Atoi(endpoint[colon+1:])
+	if err != nil {
+		return "", err
+	}
+	return str + strconv.Itoa(port+1), nil
 }
 
 /** return the endpoint for zmq*/
