@@ -16,14 +16,14 @@ type Serializer struct {
 }
 
 var (
-	_serializer *Serializer
+	__serializer *Serializer
 )
 
 func NewSerializer() *Serializer {
-	if _serializer == nil {
-		_serializer = &Serializer{}
+	if __serializer == nil {
+		__serializer = &Serializer{}
 	}
-	return _serializer
+	return __serializer
 }
 
 func (s *Serializer) Encode(seris Serializable) (int, []byte, error) {
@@ -45,17 +45,17 @@ func (s *Serializer) Serialize(bufs ...[]byte) []byte {
 }
 
 var (
-	_stringSet *StringSet
+	__stringSet *StringSet
 )
 
 type StringSet struct {
 }
 
 func NewStringSet() *StringSet {
-	if _stringSet == nil {
-		_stringSet = &StringSet{}
+	if __stringSet == nil {
+		__stringSet = &StringSet{}
 	}
-	return _stringSet
+	return __stringSet
 }
 
 func (s *StringSet) IndexOf(set []string, str string) int {

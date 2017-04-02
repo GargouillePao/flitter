@@ -107,8 +107,11 @@ func Test_Node_Children(t *testing.T) {
 	child5 := NewNodeInfo()
 
 	child1.SetAddr("167.0.0.1", "8090")
+	child1.SetPath("/rout/1")
 	child2.SetAddr("167.1.0.2", "7090")
+	child2.SetPath("/rout/2")
 	child3.SetAddr("167.2.0.3", "6090")
+	child3.SetPath("/rout/3")
 	node.SetChildren([]NodeInfo{
 		child1,
 		child2,
@@ -117,13 +120,36 @@ func Test_Node_Children(t *testing.T) {
 	t.Log(utils.Infof("Node Children Succeed1,%v", node))
 
 	child4.SetAddr("167.3.0.4", "5090")
+	child4.SetPath("/rout/4")
 	child5.SetAddr("167.4.0.5", "4090")
+	child5.SetPath("/rout/5")
 	node.SetChildren([]NodeInfo{
 		child1,
 		child4,
 		child5,
 	})
 	t.Log(utils.Infof("Node Children Succeed2,%v", node))
+
+	err := node.RemoveChild(child4)
+	if err != nil {
+		t.Log(utils.Errf(err.Error()))
+		t.Fatal()
+	}
+	t.Log(utils.Infof("Node Children Succeed3,%v", node))
+
+	err = node.AddChild(child2)
+	if err != nil {
+		t.Log(utils.Errf(err.Error()))
+		t.Fatal()
+	}
+	t.Log(utils.Infof("Node Children Succeed4,%v", node))
+	err = node.AddChild(child2)
+	if err != nil {
+		t.Log(utils.Errf(err.Error()))
+		t.Fatal()
+	}
+	t.Log(utils.Infof("Node Children Succeed5,%v", node))
+
 	t.Log(utils.Norf("End Node Children"))
 }
 

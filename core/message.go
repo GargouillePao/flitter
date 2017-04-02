@@ -3,7 +3,9 @@ package core
 import (
 	"errors"
 	"fmt"
+	utils "github.com/GargouillePao/flitter/utils"
 	"strings"
+	"time"
 )
 
 /*(NULL)*/
@@ -19,6 +21,7 @@ const (
 	MA_Crash
 	MA_Vote
 	MA_Upgrade
+	MA_Terminal
 	MA_User_Request
 )
 
@@ -49,6 +52,8 @@ func (m MessageAction) String() (str string) {
 		return "MA_Upgrade"
 	case MA_User_Request:
 		return "MA_User_Request"
+	case MA_Terminal:
+		return "MA_Terminal"
 	}
 	return ""
 }
@@ -97,22 +102,24 @@ type MessageInfo interface {
 	String() string
 	SetAcion(action MessageAction)
 	SetState(state MessageState)
-	Info() (action MessageAction, state MessageState)
+	SetTime(_time time.Time)
+	Info() (action MessageAction, state MessageState, _time time.Time)
 }
 
 func NewMessageInfo() MessageInfo {
 	return &messageInfo{
 		action: MA_Undefine,
-		state:  MS_Undefine,
-		size:   2,
+		state:  MS_Probe,
+		size:   10,
 	}
 }
 
 /*the data of message head*/
 type messageInfo struct {
-	action MessageAction
-	state  MessageState
-	size   int
+	action   MessageAction
+	state    MessageState
+	sendtime int64
+	size     int
 }
 
 /** read out to the buf */
@@ -124,6 +131,17 @@ func (m *messageInfo) Read(buf []byte) (int, error) {
 	}
 	buf[0] = byte(m.action)
 	buf[1] = byte(m.state)
+	timebuf, err := utils.Ecode(m.sendtime)
+	if err != nil {
+		return 0, err
+	}
+	if len(timebuf) < 8 {
+		err = errors.New("Invalid message time to read")
+		return 0, err
+	}
+	for i := 2; i < m.Size(); i++ {
+		buf[i] = timebuf[i-2]
+	}
 	return m.Size(), nil
 }
 
@@ -137,7 +155,10 @@ func (m *messageInfo) Write(buf []byte) (int, error) {
 	m.action = MessageAction(buf[0]).Normalize()
 	buf = buf[1:]
 	m.state = MessageState(buf[0]).Normalize()
-	return m.Size(), nil
+	buf = buf[1:]
+	sendtime, err := utils.ByteArrayToUInt64(buf)
+	m.sendtime = int64(sendtime)
+	return m.Size(), err
 }
 
 func (m *messageInfo) SetAcion(action MessageAction) {
@@ -150,14 +171,21 @@ func (m *messageInfo) SetState(state MessageState) {
 	return
 }
 
-func (m *messageInfo) Info() (action MessageAction, state MessageState) {
+func (m *messageInfo) SetTime(_time time.Time) {
+	m.sendtime = _time.UnixNano()
+	return
+}
+
+func (m *messageInfo) Info() (action MessageAction, state MessageState, _time time.Time) {
 	action = m.action
 	state = m.state
+	_time = time.Unix(0, m.sendtime)
 	return
 }
 
 func (m messageInfo) String() string {
-	str := fmt.Sprintf("MsgInfo[\n\taction:%v\n\tstate:%v\n]", m.action, m.state)
+	timstr := time.Unix(0, m.sendtime).Format("2006.01.02 15:04:05")
+	str := fmt.Sprintf("MsgInfo[\n\taction:%v\n\tstate:%v\n\ttime:%s\n]", m.action, m.state, timstr)
 	return str
 }
 func (m messageInfo) Size() int {
@@ -169,24 +197,23 @@ type MessageState uint8
 
 const (
 	_ MessageState = iota
-	MS_Undefine
 	MS_Probe
 	MS_Ask
 	MS_Succeed
 	MS_Failed
+	MS_Error
+	MS_Local
 )
 
 func (m MessageState) Normalize() MessageState {
-	if m > 5 {
-		m = MS_Undefine
+	if m > 6 {
+		m = MS_Probe
 	}
 	return m
 }
 
 func (m MessageState) String() (str string) {
 	switch m {
-	case MS_Undefine:
-		return "MS_Undefine"
 	case MS_Probe:
 		return "MS_Probe"
 	case MS_Ask:
@@ -195,6 +222,10 @@ func (m MessageState) String() (str string) {
 		return "MS_Succeed"
 	case MS_Failed:
 		return "MS_Failed"
+	case MS_Error:
+		return "MS_Error"
+	case MS_Local:
+		return "MS_Local"
 	}
 	return ""
 }

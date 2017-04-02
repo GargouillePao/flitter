@@ -21,9 +21,13 @@ type Node interface {
 	ReceiveFromLeader() (Message, error)
 	/** handle the message of the receiver */
 	ReceiveFromChilren() (Message, error)
+	ReplyToChild(childname string, msg Message) error
 	/** bind  receiver and subscriber */
 	SetChildren(children []NodeInfo)
+	AddChild(child NodeInfo) error
+	RemoveChild(child NodeInfo) error
 	SetLeader(leader NodeInfo) error
+	Info() (info NodeInfo, leader NodeInfo, chilren []NodeInfo)
 	Close()
 	String() string
 }
@@ -58,7 +62,6 @@ func NewNode(info NodeInfo) (Node, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	node := &node{
 		info:               info,
 		children:           make([]NodeInfo, 0),
@@ -71,6 +74,9 @@ func NewNode(info NodeInfo) (Node, error) {
 	}
 	err = node.Bind()
 	return node, err
+}
+func (n *node) Info() (info NodeInfo, leader NodeInfo, chilren []NodeInfo) {
+	return n.info, n.leader, n.children
 }
 
 /** bind  receiver and publisher the rport = 1+pport */
@@ -94,10 +100,12 @@ func (n *node) Bind() error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("Bind Publish", pend)
 	err = n.receiver.Bind(rend)
 	if err != nil {
 		return err
 	}
+	fmt.Println("Bind Receive", rend)
 	return nil
 }
 
@@ -108,36 +116,45 @@ func (n *node) Close() {
 	n.receiver.Close()
 }
 
+func (n *node) DisconnectChildren(all bool) {
+	for _, oldEnds := range n.oldChildEndpoints {
+		n.sender.Disconnect(oldEnds)
+	}
+	if all {
+		for _, newChild := range n.children {
+			newEnd, err := newChild.GetEndpoint(true)
+			if err != nil {
+				continue
+			}
+			err = n.sender.Disconnect(newEnd)
+			if err != nil {
+				continue
+			}
+		}
+	}
+}
+
 /**
 disconnect old children
 connect children
 */
-func (n *node) ConnectChildren() error {
+func (n *node) ConnectChild(childname string) error {
 	errout := errors.New("No Child")
-	for _, oldEnds := range n.oldChildEndpoints {
-		n.publisher.Disconnect(oldEnds)
-	}
+	n.DisconnectChildren(false)
 	for _, newChild := range n.children {
 		newEnd, err := newChild.GetEndpoint(true)
 		if err != nil {
 			continue
 		}
-		err = n.publisher.Connect(newEnd)
-		if err != nil {
-			continue
+		if childname == newChild.GetName() {
+			return n.sender.Connect(newEnd)
 		}
-		errout = nil
 	}
 	return errout
 }
 
-/**
-disconnect old leader
-connect leader
-if isPublish then do with subscriber or do with sender
-*/
-func (n *node) ConnectLeader(isPublish bool) error {
-	errout := errors.New("No Leader")
+//return err but never mind,it will no make any trouble
+func (n *node) DisconnectLeader(isPublish bool, all bool) error {
 	for _, oldEnds := range n.oldLeaderEndpoints {
 		if isPublish {
 			pubend := getPublisherEndpoint(oldEnds)
@@ -149,6 +166,33 @@ func (n *node) ConnectLeader(isPublish bool) error {
 			}
 		}
 	}
+	if n.leader == nil {
+		return errors.New("no leader when disconnect leader")
+	}
+	leaderEnds, err := n.leader.GetEndpoint(true)
+	if err != nil {
+		return err
+	}
+	if all && n.leader != nil {
+		if isPublish {
+			n.publisher.Disconnect(leaderEnds)
+		} else {
+			n.sender.Disconnect(leaderEnds)
+		}
+	}
+	return nil
+}
+
+/**
+disconnect old leader
+connect leader
+if isPublish then do with subscriber or do with sender
+*/
+func (n *node) ConnectLeader(isPublish bool) error {
+	errout := errors.New("No Leader")
+
+	errout = n.DisconnectLeader(isPublish, false)
+
 	if n.leader != nil {
 		var newEnd string
 		newEnd, errout = n.leader.GetEndpoint(true)
@@ -166,6 +210,7 @@ func (n *node) ConnectLeader(isPublish bool) error {
 			if errout != nil {
 				return errout
 			}
+			fmt.Println("Connected", recvend)
 			errout = n.sender.Connect(recvend)
 			if errout != nil {
 				return errout
@@ -178,12 +223,12 @@ func (n *node) ConnectLeader(isPublish bool) error {
 
 /** handle the message of sender */
 func (n *node) SendToLeader(msg Message) error {
+	n.DisconnectChildren(true)
 	err := n.ConnectLeader(false)
 	if err != nil {
 		return err
 	}
-	err = sendMsg(n.sender, msg)
-	return err
+	return sendMsg(n.sender, msg)
 }
 
 /** handle the message of publisher*/
@@ -206,6 +251,75 @@ func (n *node) ReceiveFromLeader() (Message, error) {
 func (n *node) ReceiveFromChilren() (Message, error) {
 	msg, err := receiveMsg(n.receiver)
 	return msg, err
+}
+
+/** handle the message of the receiver */
+func (n *node) ReplyToChild(childname string, msg Message) error {
+	err := n.DisconnectLeader(false, true)
+	if err != nil {
+		return err
+	}
+	err = n.ConnectChild(childname)
+	if err != nil {
+		return err
+	}
+	return sendMsg(n.sender, msg)
+}
+
+func (n *node) AddChild(child NodeInfo) error {
+	newChildEndpoint, err := child.GetEndpoint(true)
+	if err != nil {
+		return err
+	}
+	for index, oldEnd := range n.oldChildEndpoints {
+		if oldEnd == newChildEndpoint {
+			if index >= len(n.oldChildEndpoints)-1 {
+				n.oldChildEndpoints = n.oldChildEndpoints[:index]
+			} else {
+				n.oldChildEndpoints = append(n.oldChildEndpoints[:index], n.oldChildEndpoints[index+1:]...)
+			}
+			break
+		}
+	}
+	for _, nowEnd := range n.children {
+		if nowEnd.GetName() == child.GetName() {
+			return nil
+		}
+	}
+	n.children = append(n.children, child)
+	return nil
+}
+
+func (n *node) RemoveChild(child NodeInfo) error {
+	waistedChildEndpoint, err := child.GetEndpoint(true)
+	if err != nil {
+		return err
+	}
+	targindex := -1
+	for index, nowEnd := range n.children {
+		if nowEnd.GetName() == child.GetName() {
+			targindex = index
+			break
+		}
+	}
+	if targindex >= 0 {
+		if targindex >= len(n.children)-1 {
+			n.children = n.children[:targindex]
+		} else {
+			n.children = append(n.children[:targindex], n.children[targindex+1:]...)
+		}
+	}
+	hasthesame := false
+	for _, oldEnd := range n.oldChildEndpoints {
+		if oldEnd == waistedChildEndpoint {
+			hasthesame = true
+			break
+		}
+	}
+	if !hasthesame {
+		n.oldChildEndpoints = append(n.oldChildEndpoints, waistedChildEndpoint)
+	}
+	return nil
 }
 
 /**
@@ -240,10 +354,13 @@ func (n *node) SetChildren(children []NodeInfo) {
 Check whether the new leader is == nowleader and in the oldLeaders
 */
 func (n *node) SetLeader(leader NodeInfo) error {
-	set := NewStringSet()
-	newEnd, err := leader.GetEndpoint(true)
-	if err != nil {
-		return err
+	var newEnd string = ""
+	var err error
+	if leader != nil {
+		newEnd, err = leader.GetEndpoint(true)
+		if err != nil {
+			return err
+		}
 	}
 	if n.leader != nil {
 		oldEnd, err := n.leader.GetEndpoint(true)
@@ -254,12 +371,15 @@ func (n *node) SetLeader(leader NodeInfo) error {
 			n.oldLeaderEndpoints = append(n.oldLeaderEndpoints, oldEnd)
 		}
 	}
-	index := set.IndexOf(n.oldLeaderEndpoints, newEnd)
+	index := NewStringSet().IndexOf(n.oldLeaderEndpoints, newEnd)
 	if index >= 0 && index < len(n.oldLeaderEndpoints)-1 {
 		n.oldLeaderEndpoints = append(n.oldLeaderEndpoints[:index], n.oldLeaderEndpoints[index+1:]...)
 	}
 	n.leader = leader
-	return nil
+	if n.leader == nil {
+		err = errors.New("no leader after set leader")
+	}
+	return err
 }
 func (n *node) String() string {
 	childrenStr := ""
@@ -425,6 +545,6 @@ func (n *nodeInfo) SetAddr(host, port string) {
 	n.addr = net.JoinHostPort(host, port)
 }
 func (n nodeInfo) String() string {
-	str := fmt.Sprintf("NodeInfo[\n\taddr:%v,\n\tpath:%v\n]", n.addr, n.path)
+	str := fmt.Sprintf("NodeInfo[\n\taddr:%v\n\tpath:%v\n\tname:%v\n]", n.addr, n.path, n.GetName())
 	return str
 }

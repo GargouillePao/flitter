@@ -3,6 +3,7 @@ package core
 import (
 	utils "github.com/GargouillePao/flitter/utils"
 	"testing"
+	"time"
 )
 
 func Test_MessageInfo(t *testing.T) {
@@ -10,8 +11,10 @@ func Test_MessageInfo(t *testing.T) {
 	info := NewMessageInfo()
 	info.SetAcion(MA_JoinGlobal)
 	info.SetState(MS_Probe)
-	action, state := info.Info()
-	if action == MA_JoinGlobal && state == MS_Probe && info.Size() == 2 {
+	nowTime := time.Now()
+	info.SetTime(nowTime)
+	action, state, _time := info.Info()
+	if action == MA_JoinGlobal && state == MS_Probe && info.Size() == 10 && _time.Equal(nowTime) {
 		t.Logf(utils.Infof("MessageInfo create succeed and now it's:%v", info))
 	} else {
 		t.Logf(utils.Errf("MessageInfo create failed and now it's:%v", info))
@@ -25,6 +28,8 @@ func Test_MessageInfo_Serialize(t *testing.T) {
 	info := NewMessageInfo()
 	info.SetAcion(MA_JoinGlobal)
 	info.SetState(MS_Probe)
+	nowTime := time.Now()
+	info.SetTime(nowTime)
 	serializer := NewSerializer()
 	_, buf, err := serializer.Encode(info)
 	if err != nil {
@@ -44,8 +49,8 @@ func Test_MessageInfo_Serialize(t *testing.T) {
 		t.Log(utils.Errf("%v", err))
 		t.Fail()
 	}
-	action, state := info.Info()
-	if action != MA_JoinGlobal || state != MS_Probe {
+	action, state, _time := info.Info()
+	if action != MA_JoinGlobal || state != MS_Probe || !nowTime.Equal(_time) {
 		t.Logf(utils.Errf("Err and now info is:%v", info))
 		t.Fail()
 	} else {
