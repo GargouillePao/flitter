@@ -14,14 +14,17 @@ type MessageAction uint8
 const (
 	_ MessageAction = iota
 	MA_Undefine
-	MA_JoinGlobal
+	MA_Init
+	MA_Refer
+	MA_Checkin
+	MA_Checkout
 	MA_Join
 	MA_Invite
 	MA_Heartbeat
 	MA_Crash
 	MA_Vote
 	MA_Upgrade
-	MA_Terminal
+	MA_Term
 	MA_User_Request
 )
 
@@ -34,10 +37,16 @@ func (m MessageAction) Normalize() MessageAction {
 
 func (m MessageAction) String() (str string) {
 	switch m {
+	case MA_Init:
+		return "MA_Init"
 	case MA_Undefine:
 		return "MA_Undefine"
-	case MA_JoinGlobal:
-		return "MA_JoinGlobal"
+	case MA_Refer:
+		return "MA_Refer"
+	case MA_Checkin:
+		return "MA_Checkin"
+	case MA_Checkout:
+		return "MA_Checkout"
 	case MA_Join:
 		return "MA_Join"
 	case MA_Invite:
@@ -52,8 +61,46 @@ func (m MessageAction) String() (str string) {
 		return "MA_Upgrade"
 	case MA_User_Request:
 		return "MA_User_Request"
-	case MA_Terminal:
-		return "MA_Terminal"
+	case MA_Term:
+		return "MA_Term"
+	}
+	return ""
+}
+
+/*(NULL)*/
+type MessageState uint8
+
+const (
+	_ MessageState = iota
+	MS_Probe
+	MS_Ask
+	MS_Succeed
+	MS_Failed
+	MS_Error
+	MS_Local
+)
+
+func (m MessageState) Normalize() MessageState {
+	if m > 6 {
+		m = MS_Probe
+	}
+	return m
+}
+
+func (m MessageState) String() (str string) {
+	switch m {
+	case MS_Probe:
+		return "MS_Probe"
+	case MS_Ask:
+		return "MS_Ask"
+	case MS_Succeed:
+		return "MS_Succeed"
+	case MS_Failed:
+		return "MS_Failed"
+	case MS_Error:
+		return "MS_Error"
+	case MS_Local:
+		return "MS_Local"
 	}
 	return ""
 }
@@ -190,42 +237,4 @@ func (m messageInfo) String() string {
 }
 func (m messageInfo) Size() int {
 	return m.size
-}
-
-/*(NULL)*/
-type MessageState uint8
-
-const (
-	_ MessageState = iota
-	MS_Probe
-	MS_Ask
-	MS_Succeed
-	MS_Failed
-	MS_Error
-	MS_Local
-)
-
-func (m MessageState) Normalize() MessageState {
-	if m > 6 {
-		m = MS_Probe
-	}
-	return m
-}
-
-func (m MessageState) String() (str string) {
-	switch m {
-	case MS_Probe:
-		return "MS_Probe"
-	case MS_Ask:
-		return "MS_Ask"
-	case MS_Succeed:
-		return "MS_Succeed"
-	case MS_Failed:
-		return "MS_Failed"
-	case MS_Error:
-		return "MS_Error"
-	case MS_Local:
-		return "MS_Local"
-	}
-	return ""
 }

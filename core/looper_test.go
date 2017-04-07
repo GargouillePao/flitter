@@ -2,53 +2,60 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	utils "github.com/GargouillePao/flitter/utils"
 	"testing"
 	"time"
 )
 
 func TestMessageLooper(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
+	fmt.Println("1")
 	t.Log(utils.Norf("Start Msg Looper"))
 	looper := NewMessageLooper(10)
-	looper.Loop(false)
-	looper.AddHandler(MA_JoinGlobal, func(msg Message) error {
+
+	looper.AddHandler(1000, MA_Refer, func(msg Message) error {
 		_, state, _ := msg.GetInfo().Info()
 		var err error
 		switch state {
+		case MS_Failed:
+			t.Log(utils.Infof("%v", msg))
 		case MS_Error:
-			msg.GetInfo().SetAcion(MA_Terminal)
+			msg.GetInfo().SetAcion(MA_Term)
 			looper.Push(msg)
 		default:
-			t.Log(utils.Infof("%v", msg))
+			//t.Log(utils.Infof("%v", msg))
 			err = errors.New("MLooper Error")
 		}
 		return err
 	})
+	fmt.Println("2")
 	times := 0
-	looper.AddHandler(MA_Heartbeat, func(msg Message) error {
+	looper.AddHandler(0, MA_Heartbeat, func(msg Message) error {
 		_, state, _ := msg.GetInfo().Info()
 		var err error
 		switch state {
 		case MS_Probe:
 			times++
-			t.Log(utils.Infof("%v", msg))
-			if times == 3 {
+			fmt.Println(utils.Infof("%v", msg))
+			if times == 5 {
 				msg := NewMessage(NewMessageInfo(), []byte("Hello"))
-				msg.GetInfo().SetAcion(MA_JoinGlobal)
+				msg.GetInfo().SetAcion(MA_Refer)
 				looper.Push(msg)
 			}
 		}
 		return err
 	})
-
-	looper.SetInterval(1000, func(t time.Time) error {
-		msg := NewMessage(NewMessageInfo(), []byte(t.String()))
+	fmt.Println("3")
+	looper.SetInterval(1000, func(_t time.Time) error {
+		msg := NewMessage(NewMessageInfo(), []byte(_t.String()))
 		msg.GetInfo().SetAcion(MA_Heartbeat)
 		msg.GetInfo().SetState(MS_Probe)
 		looper.Push(msg)
+		fmt.Println(utils.Norf("%v", msg))
 		return nil
 	})
-	looper.Wait()
+	fmt.Println("4")
+	looper.Loop()
 	t.Log(utils.Norf("End Msg Looper"))
 }

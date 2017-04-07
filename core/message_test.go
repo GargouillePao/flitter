@@ -9,12 +9,12 @@ import (
 func Test_MessageInfo(t *testing.T) {
 	t.Log(utils.Norf("Start MessageInfo"))
 	info := NewMessageInfo()
-	info.SetAcion(MA_JoinGlobal)
+	info.SetAcion(MA_Refer)
 	info.SetState(MS_Probe)
 	nowTime := time.Now()
 	info.SetTime(nowTime)
 	action, state, _time := info.Info()
-	if action == MA_JoinGlobal && state == MS_Probe && info.Size() == 10 && _time.Equal(nowTime) {
+	if action == MA_Refer && state == MS_Probe && info.Size() == 10 && _time.Equal(nowTime) {
 		t.Logf(utils.Infof("MessageInfo create succeed and now it's:%v", info))
 	} else {
 		t.Logf(utils.Errf("MessageInfo create failed and now it's:%v", info))
@@ -26,7 +26,7 @@ func Test_MessageInfo(t *testing.T) {
 func Test_MessageInfo_Serialize(t *testing.T) {
 	t.Log(utils.Norf("Start MsgInfo Serialize"))
 	info := NewMessageInfo()
-	info.SetAcion(MA_JoinGlobal)
+	info.SetAcion(MA_Refer)
 	info.SetState(MS_Probe)
 	nowTime := time.Now()
 	info.SetTime(nowTime)
@@ -36,7 +36,7 @@ func Test_MessageInfo_Serialize(t *testing.T) {
 		t.Log(utils.Errf("%v", err))
 		t.Fail()
 	}
-	if len(buf) < 2 || buf[0] != byte(MA_JoinGlobal) || buf[1] != byte(MS_Probe) {
+	if len(buf) < 2 || buf[0] != byte(MA_Refer) || buf[1] != byte(MS_Probe) {
 		t.Logf(utils.Errf("Err and now info is:%v; buf is:%v", info, buf))
 		t.Fail()
 	} else {
@@ -50,7 +50,7 @@ func Test_MessageInfo_Serialize(t *testing.T) {
 		t.Fail()
 	}
 	action, state, _time := info.Info()
-	if action != MA_JoinGlobal || state != MS_Probe || !nowTime.Equal(_time) {
+	if action != MA_Refer || state != MS_Probe || !nowTime.Equal(_time) {
 		t.Logf(utils.Errf("Err and now info is:%v", info))
 		t.Fail()
 	} else {
@@ -63,7 +63,7 @@ func Test_MessageInfo_Serialize(t *testing.T) {
 func Test_Message_Serialize(t *testing.T) {
 	t.Log(utils.Norf("Start MsgInfo Serialize"))
 	info := NewMessageInfo()
-	info.SetAcion(MA_JoinGlobal)
+	info.SetAcion(MA_Refer)
 	info.SetState(MS_Probe)
 	content := []byte("Hello")
 	msg := NewMessage(info, content)

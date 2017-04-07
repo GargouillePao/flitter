@@ -3,20 +3,42 @@ package utils
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
-	//"io"
 	"errors"
+	"fmt"
+	"io"
 	"os"
+	"path"
+	"strings"
+	"time"
 	//"unsafe"
 )
 
 var __errors chan error
+var __logAddr io.Writer
 
+func InitLog(verb bool, fname string) (filename string, err error) {
+	if fname != "" {
+		filename = path.Join(fname, fmt.Sprintf("%d", time.Now().UnixNano())+".log")
+		fd, err := os.Create(filename)
+		SetLogAddress(fd)
+		return filename, err
+	}
+	if verb {
+		SetLogAddress(os.Stdout)
+	}
+	return "", nil
+}
+
+func SetLogAddress(w io.Writer) {
+	__logAddr = w
+}
 func init() {
 	__errors = make(chan error, 100)
 	go func() {
-		err := <-__errors
-		fmt.Println(Errf("[ERROR]%s", err.Error()))
+		for {
+			err := <-__errors
+			ErrInfo(err)
+		}
 	}()
 }
 
@@ -27,6 +49,10 @@ func ErrIn(err error, info ...string) (ok bool) {
 		__errors <- ErrAppend(err, info...)
 	}
 	return
+}
+
+func CloseError() {
+	close(__errors)
 }
 
 func Infof(format string, item ...interface{}) string {
@@ -58,8 +84,15 @@ func ErrQuit(err error, info ...string) {
 
 func ErrInfo(err error, info ...string) (ok bool) {
 	if err != nil {
-		errstr := Errf("Error(QAQ):[%s]  %s", err.Error(), info)
-		fmt.Println(errstr)
+		errstr := "Error(QAQ):" + err.Error() + strings.Join(info, ",")
+		errstrwithcolor := Errf(errstr)
+		if __logAddr != nil {
+			if __logAddr == os.Stdout {
+				fmt.Fprintln(__logAddr, errstrwithcolor)
+			} else {
+				fmt.Fprintln(__logAddr, errstr)
+			}
+		}
 		ok = true
 	} else {
 		ok = false
@@ -68,7 +101,8 @@ func ErrInfo(err error, info ...string) (ok bool) {
 }
 
 func ErrAppend(err error, info ...string) error {
-	return errors.New(fmt.Sprintf("[%s]:%s", err.Error(), info))
+	errstr := err.Error() + strings.Join(info, ",")
+	return errors.New(errstr)
 }
 
 func Sizeof(data interface{}) int {
