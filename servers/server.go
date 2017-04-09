@@ -7,7 +7,8 @@ import (
 )
 
 var __verb bool = false
-var __looperSize int = 10
+
+const __LooperSize int = 10
 
 type Server interface {
 	Config(ca ConfigAction, st ServerType, info core.NodeInfo) error

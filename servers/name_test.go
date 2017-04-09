@@ -15,7 +15,7 @@ func Test_Name(t *testing.T) {
 	t.Log(utils.Norf("Start Name"))
 	var err error
 	server := NewNameServer()
-	err = server.Config(CA_Recv, ST_Watch, "*:7000")
+	err = server.Config(CA_Recv, ST_Watch, "127.0.0.1:7000")
 	if err != nil {
 		t.Fatal(utils.Errf("%v", err))
 	}
@@ -23,7 +23,7 @@ func Test_Name(t *testing.T) {
 	if err != nil {
 		t.Fatal(utils.Errf("%v", err))
 	}
-	time.AfterFunc(time.Second*3, func() {
+	time.AfterFunc(time.Second*10, func() {
 		server.Term()
 	})
 	server.Start()

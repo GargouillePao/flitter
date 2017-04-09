@@ -151,6 +151,12 @@ func (m *messageLooper) Loop() {
 func (m *messageLooper) Term() {
 	close(m.msgs)
 	close(m.waiting)
+	for _, tricker := range m.handleTricker {
+		if tricker.timer != nil {
+			tricker.timer.Stop()
+			tricker.timer.Reset(0)
+		}
+	}
 	utils.CloseError()
 	m = nil
 	os.Exit(0)

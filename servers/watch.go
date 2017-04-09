@@ -16,7 +16,7 @@ type WatchServer interface {
 type watchsrv struct {
 	senderToName         core.Sender
 	recverFromName       core.Receiver
-	notifierForHeartBeat core.Deliverer
+	notifierForHeartbeat core.Deliverer
 	looper               core.MessageLooper
 	nameservers          []string
 	nameserverIndex      int
@@ -24,7 +24,7 @@ type watchsrv struct {
 
 func NewWatchServer() WatchServer {
 	return &watchsrv{
-		looper:          core.NewMessageLooper(__looperSize),
+		looper:          core.NewMessageLooper(__LooperSize),
 		nameservers:     make([]string, 0),
 		nameserverIndex: 0,
 	}
@@ -50,12 +50,12 @@ func (w *watchsrv) Config(ca ConfigAction, st ServerType, info core.NodeInfo) er
 		}
 	case ST_HeartBeat:
 		if ca == CA_Send {
-			if w.notifierForHeartBeat == nil {
+			if w.notifierForHeartbeat == nil {
 				return errors.New("Heartbeat notifier need config recv first")
 			}
-			w.notifierForHeartBeat.AddNodeInfo(info)
+			w.notifierForHeartbeat.AddNodeInfo(info)
 		} else {
-			w.notifierForHeartBeat, err = core.NewDeliverer(info, zmq.DEALER)
+			w.notifierForHeartbeat, err = core.NewDeliverer(info, zmq.DEALER)
 			if err != nil {
 				return err
 			}
@@ -70,17 +70,17 @@ func (w *watchsrv) getNameServer() core.NodeInfo {
 }
 func (w *watchsrv) Init() error {
 	var err error
-	if w.senderToName == nil || w.recverFromName == nil || w.notifierForHeartBeat == nil {
+	if w.senderToName == nil || w.recverFromName == nil || w.notifierForHeartbeat == nil {
 		err = errors.New("Config not enough")
 		return err
 	}
 	err = w.recverFromName.Bind()
 	if err != nil {
-		return err
+		return utils.ErrAppend(err, " Recver(from name) Bind")
 	}
-	err = w.notifierForHeartBeat.Bind()
+	err = w.notifierForHeartbeat.Bind()
 	if err != nil {
-		return err
+		return utils.ErrAppend(err, " Notifier(for heartbeat) Bind")
 	}
 	w.HandleRecive()
 	w.HandleMessages()
@@ -100,9 +100,9 @@ func (w *watchsrv) HandleRecive() {
 		}
 	}()
 	go func() {
-		if w.notifierForHeartBeat != nil {
+		if w.notifierForHeartbeat != nil {
 			for {
-				msg, err := w.notifierForHeartBeat.Recv()
+				msg, err := w.notifierForHeartbeat.Recv()
 				if err != nil {
 					utils.ErrIn(err, "[receive at watch from heartbeat]")
 					continue
@@ -113,7 +113,7 @@ func (w *watchsrv) HandleRecive() {
 	}()
 }
 func (w *watchsrv) HandleMessages() {
-	w.looper.AddHandler(1000, core.MA_Refer, func(msg core.Message) error {
+	w.looper.AddHandler(3000, core.MA_Refer, func(msg core.Message) error {
 		_, state, _ := msg.GetInfo().Info()
 		switch state {
 		case core.MS_Probe:
@@ -123,11 +123,28 @@ func (w *watchsrv) HandleMessages() {
 				return err
 			}
 			msg.GetInfo().SetState(core.MS_Ask)
+			msg.SetContent([]byte(w.recverFromName.GetBindNodeInfo()))
 			err = w.senderToName.Send(msg)
 			if err != nil {
 				return err
 			}
 		case core.MS_Succeed:
+			nodeinfo := core.NodeInfo(string(msg.GetContent()))
+			leader, err := nodeinfo.GetLeaderInfo()
+			if err != nil {
+				msg.GetInfo().SetState(core.MS_Failed)
+				w.looper.Push(msg)
+				return err
+			}
+			if leader == "" {
+				fmt.Println("I am leader ", leader, msg)
+			} else {
+				fmt.Println("my leader is ", leader, msg)
+			}
+			//for testing
+			//msg.GetInfo().SetAcion(core.MA_Term)
+			//w.looper.Push(msg)
+
 		case core.MS_Failed:
 			for _, nameserver := range w.nameservers {
 				w.senderToName.RemoveNodeInfo(core.NodeInfo(nameserver))
