@@ -13,6 +13,7 @@ type Subscriber interface {
 	GetConnNodeInfo() []string
 	AddNodeInfo(info NodeInfo)
 	RemoveNodeInfo(info NodeInfo)
+	Close()
 	Recv() (Message, error)
 }
 
@@ -24,6 +25,7 @@ type Publisher interface {
 	String() string
 	Bind() error
 	GetBindNodeInfo() string
+	Close()
 	Send(msg Message) error
 }
 
@@ -38,6 +40,7 @@ type Sender interface {
 	GetConnNodeInfo() []string
 	Connect() error
 	Disconnect(all bool)
+	Close()
 	Send(msg Message) error
 }
 
@@ -49,6 +52,7 @@ type Receiver interface {
 	String() string
 	Bind() error
 	GetBindNodeInfo() string
+	Close()
 	Recv() (Message, error)
 }
 
@@ -65,6 +69,7 @@ type Deliverer interface {
 	Bind() error
 	Connect() error
 	Disconnect(all bool)
+	Close()
 	Send(msg Message) error
 	Recv() (Message, error)
 }
@@ -197,6 +202,12 @@ func (d *deliverer) Connect() error {
 		}
 	}
 	return errout
+}
+
+func (d *deliverer) Close() {
+	if d.socket != nil {
+		d.socket.Close()
+	}
 }
 
 func (d *deliverer) Send(msg Message) error {

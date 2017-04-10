@@ -108,20 +108,30 @@ func (m MessageState) String() (str string) {
 /*(NULL)*/
 type Message interface {
 	GetInfo() (info MessageInfo)
+	GetVisitTimes() int
+	Visit()
 	SetContent(buf []byte)
 	GetContent() (buf []byte)
 	String() string
 }
 
 func NewMessage(info MessageInfo, content []byte) Message {
-	msg := &message{info: info, content: content}
+	msg := &message{info: info, content: content, visit: 0}
 	return msg
 }
 
 /*(NULL)*/
 type message struct {
 	info    MessageInfo
+	visit   int
 	content []byte
+}
+
+func (m *message) Visit() {
+	m.visit += 1
+}
+func (m *message) GetVisitTimes() int {
+	return m.visit
 }
 
 func (m *message) GetInfo() (info MessageInfo) {
@@ -140,7 +150,7 @@ func (m *message) GetContent() (buf []byte) {
 
 func (m *message) String() string {
 	infostr := strings.Join(strings.Split(fmt.Sprintf("%v", m.info), "\n"), "\n\t")
-	str := fmt.Sprintf("Message[\n\tinfo:%s\n\tcontent:%s\n]", infostr, m.content)
+	str := fmt.Sprintf("Message[\n\tinfo:%s\n\tvisist:%d\n\tcontent:%s\n]", infostr, m.visit, m.content)
 	return str
 }
 

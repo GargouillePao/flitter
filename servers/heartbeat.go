@@ -109,7 +109,5 @@ func (h *heartbeatsrv) Start() {
 	h.looper.Loop()
 }
 func (h *heartbeatsrv) Term() {
-	info := core.NewMessageInfo()
-	info.SetAcion(core.MA_Term)
-	h.looper.Push(core.NewMessage(info, []byte("")))
+	h.Term()
 }

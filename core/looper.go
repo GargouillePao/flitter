@@ -14,6 +14,13 @@ type TimeTricker struct {
 	duration time.Duration
 }
 
+func (t *TimeTricker) Stop() {
+	if t.timer != nil {
+		t.timer.Stop()
+	}
+	t.timer = nil
+}
+
 /*hand over the messages*/
 type MessageLooper interface {
 	AddHandler(maxHandleTime time.Duration, action MessageAction, handler MessageHandler)
@@ -21,6 +28,7 @@ type MessageLooper interface {
 	SetInterval(timestamp time.Duration, handler func(t time.Time) error)
 	Loop()
 	Push(msg Message)
+	Term()
 }
 
 func NewMessageLooper(bufferSize int) MessageLooper {
@@ -58,6 +66,10 @@ func (m *messageLooper) gatherError(handler MessageHandler, msg Message) {
 }
 func (m *messageLooper) Push(msg Message) {
 	if m.msgs != nil {
+		_, state, _ := msg.GetInfo().Info()
+		if state == MS_Failed {
+			msg.Visit()
+		}
 		m.msgs <- msg
 	}
 }
@@ -93,7 +105,7 @@ func (m *messageLooper) Loop() {
 	go func() {
 		for sig := range sigRecv {
 			fmt.Println("Quit:" + sig.String())
-			m.Term()
+			m.term()
 		}
 	}()
 	go func() {
@@ -102,11 +114,11 @@ func (m *messageLooper) Loop() {
 			case msg, isOpen := <-m.msgs:
 				if !isOpen {
 					fmt.Println(utils.Errf("Message Loop Closed"))
-					m.Term()
+					m.term()
 				} else {
 					action, state, _ := msg.GetInfo().Info()
 					if action == MA_Term || len(m.handlers) <= 0 {
-						m.Term()
+						m.term()
 					}
 					//for retry
 					tricker, ok := m.handleTricker[action]
@@ -119,8 +131,7 @@ func (m *messageLooper) Loop() {
 										tricker.duration,
 										func() {
 											msg.GetInfo().SetState(MS_Failed)
-											tricker.timer.Stop()
-											tricker.timer = nil
+											tricker.Stop()
 											m.handleTricker[action] = tricker
 											m.Push(msg)
 										},
@@ -128,8 +139,7 @@ func (m *messageLooper) Loop() {
 								}
 								m.handleTricker[action] = tricker
 							case MS_Succeed:
-								tricker.timer.Stop()
-								tricker.timer = nil
+								tricker.Stop()
 								m.handleTricker[action] = tricker
 							}
 						}(tricker, state, action)
@@ -149,6 +159,12 @@ func (m *messageLooper) Loop() {
 }
 
 func (m *messageLooper) Term() {
+	info := NewMessageInfo()
+	info.SetAcion(MA_Term)
+	m.Push(NewMessage(info, []byte("")))
+}
+
+func (m *messageLooper) term() {
 	close(m.msgs)
 	close(m.waiting)
 	for _, tricker := range m.handleTricker {

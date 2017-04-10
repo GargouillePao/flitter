@@ -28,7 +28,6 @@ func lauchServer() {
 		__verb = *verb
 		utils.InitLog(__verb, *filename)
 	}
-	__verb = true
 }
 
 type ConfigAction uint8

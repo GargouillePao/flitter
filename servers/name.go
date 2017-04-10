@@ -123,7 +123,5 @@ func (n *namesrv) Start() {
 	n.looper.Loop()
 }
 func (n *namesrv) Term() {
-	info := core.NewMessageInfo()
-	info.SetAcion(core.MA_Term)
-	n.looper.Push(core.NewMessage(info, []byte("")))
+	n.looper.Term()
 }

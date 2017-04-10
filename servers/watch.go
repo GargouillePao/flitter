@@ -172,7 +172,5 @@ func (w *watchsrv) Start() {
 	w.looper.Loop()
 }
 func (w *watchsrv) Term() {
-	info := core.NewMessageInfo()
-	info.SetAcion(core.MA_Term)
-	w.looper.Push(core.NewMessage(info, []byte("")))
+	w.looper.Term()
 }
