@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"runtime"
 	"strings"
 	"time"
 	//"unsafe"
@@ -15,6 +16,7 @@ import (
 
 var __errors chan error
 var __logAddr io.Writer
+var __verbs bool = false
 
 func InitLog(verb bool, fname string) (filename string, err error) {
 	if fname != "" {
@@ -22,10 +24,10 @@ func InitLog(verb bool, fname string) (filename string, err error) {
 		fd, err := os.Create(filename)
 		SetLogAddress(fd)
 		return filename, err
-	}
-	if verb {
+	} else {
 		SetLogAddress(os.Stdout)
 	}
+	__verbs = verb
 	return "", nil
 }
 
@@ -46,13 +48,34 @@ func ErrIn(err error, info ...string) (ok bool) {
 	ok = false
 	if err != nil {
 		ok = true
-		__errors <- ErrAppend(err, info...)
+		_, file, line, _ := runtime.Caller(1)
+		__errors <- ErrAppend(
+			ErrAppend(
+				errors.New(fmt.Sprintf("[at %v %v]", path.Base(file), line)),
+				err.Error(),
+			),
+			info...,
+		)
 	}
 	return
 }
 
 func CloseError() {
 	close(__errors)
+}
+
+func Logf(logType func(format string, item ...interface{}) string, format string, item ...interface{}) {
+	if __verbs {
+		log := fmt.Sprintf(format, item...)
+		logwithcolor := logType(log)
+		if __logAddr != nil {
+			if __logAddr == os.Stdout {
+				fmt.Fprintln(__logAddr, logwithcolor)
+			} else {
+				fmt.Fprintln(__logAddr, log)
+			}
+		}
+	}
 }
 
 func Infof(format string, item ...interface{}) string {
@@ -84,15 +107,7 @@ func ErrQuit(err error, info ...string) {
 
 func ErrInfo(err error, info ...string) (ok bool) {
 	if err != nil {
-		errstr := "Error(QAQ):" + err.Error() + strings.Join(info, ",")
-		errstrwithcolor := Errf(errstr)
-		if __logAddr != nil {
-			if __logAddr == os.Stdout {
-				fmt.Fprintln(__logAddr, errstrwithcolor)
-			} else {
-				fmt.Fprintln(__logAddr, errstr)
-			}
-		}
+		Logf(Errf, "Error(QAQ):%s", err.Error()+strings.Join(info, ","))
 		ok = true
 	} else {
 		ok = false

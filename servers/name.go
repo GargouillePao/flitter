@@ -2,8 +2,9 @@ package servers
 
 import (
 	"errors"
+	"strings"
 	//"flag"
-	//"fmt"
+	"fmt"
 	core "github.com/GargouillePao/flitter/core"
 	utils "github.com/GargouillePao/flitter/utils"
 	"sync"
@@ -27,12 +28,16 @@ func NewNameServer() NameServer {
 	}
 }
 
-func (n *namesrv) Config(ca ConfigAction, st ServerType, info core.NodeInfo) error {
+func (n *namesrv) Config(ca ConfigAction, st ServerType, addr string) error {
 	var err error
 	switch st {
 	case ST_Watch:
 		if ca == CA_Recv {
-			n.recverFromWatch, err = core.NewReceiver(info)
+			nameaddr, err := transAddress(addr, ST_Watch, ST_Name)
+			if err != nil {
+				return err
+			}
+			n.recverFromWatch, err = core.NewReceiver(nameaddr)
 			if err != nil {
 				return err
 			}
@@ -89,7 +94,7 @@ func (n *namesrv) HandleMessages() {
 		_, state, _ := msg.GetInfo().Info()
 		switch state {
 		case core.MS_Ask:
-			addr, err := core.NodeInfo(msg.GetContent()).GetAddressInfo()
+			addr, err := transAddress(string(msg.GetContent()), ST_Name, ST_Watch)
 			if err != nil {
 				return err
 			}
@@ -108,10 +113,6 @@ func (n *namesrv) HandleMessages() {
 			if err != nil {
 				return err
 			}
-			//fmt.Println(n.senderToWatch, msg)
-			//for testing
-			//msg.GetInfo().SetAcion(core.MA_Term)
-			//n.looper.Push(msg)
 		case core.MS_Error:
 			utils.ErrIn(errors.New(msg.GetInfo().String()), "[node server]")
 		}
@@ -119,9 +120,24 @@ func (n *namesrv) HandleMessages() {
 	})
 }
 func (n *namesrv) Start() {
-	lauchServer()
 	n.looper.Loop()
 }
 func (n *namesrv) Term() {
+	n.senderToWatch.Close()
+	n.recverFromWatch.Close()
 	n.looper.Term()
+}
+func (n namesrv) String() string {
+	str := fmt.Sprintf("Name Server:["+
+		"\n\tlooper:%p"+
+		"\n\treceiver:%v"+
+		"\n\t,sender:%v"+
+		"\n\t,tree:%v"+
+		"]",
+		n.looper,
+		strings.Join(strings.Split(fmt.Sprintf("%v", n.recverFromWatch), "\n"), "\n\t"),
+		strings.Join(strings.Split(fmt.Sprintf("%v", n.senderToWatch), "\n"), "\n\t"),
+		strings.Join(strings.Split(fmt.Sprintf("%v", n.nameTree), "\n"), "\n\t"),
+	)
+	return str
 }

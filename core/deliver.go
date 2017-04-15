@@ -7,6 +7,7 @@ import (
 )
 
 type Subscriber interface {
+	SetSubscribe(filter string) error
 	String() string
 	Connect() error
 	Disconnect(all bool)
@@ -18,7 +19,15 @@ type Subscriber interface {
 }
 
 func NewSubscriber() (Subscriber, error) {
-	return NewDeliverer("", zmq.SUB)
+	subscriber, err := NewDeliverer("", zmq.SUB)
+	if err != nil {
+		return nil, err
+	}
+	err = subscriber.SetSubscribe("")
+	if err != nil {
+		return nil, err
+	}
+	return subscriber, nil
 }
 
 type Publisher interface {
@@ -29,8 +38,8 @@ type Publisher interface {
 	Send(msg Message) error
 }
 
-func NewPublisher(info NodeInfo) (Publisher, error) {
-	return NewDeliverer(info, zmq.PUB)
+func NewPublisher(addr string) (Publisher, error) {
+	return NewDeliverer(addr, zmq.PUB)
 }
 
 type Sender interface {
@@ -56,12 +65,13 @@ type Receiver interface {
 	Recv() (Message, error)
 }
 
-func NewReceiver(info NodeInfo) (Receiver, error) {
-	return NewDeliverer(info, zmq.DEALER)
+func NewReceiver(addr string) (Receiver, error) {
+	return NewDeliverer(addr, zmq.DEALER)
 }
 
 type Deliverer interface {
 	String() string
+	SetSubscribe(filter string) error
 	AddNodeInfo(info NodeInfo)
 	RemoveNodeInfo(info NodeInfo)
 	GetConnNodeInfo() []string
@@ -74,13 +84,13 @@ type Deliverer interface {
 	Recv() (Message, error)
 }
 
-func NewDeliverer(info NodeInfo, t zmq.Type) (Deliverer, error) {
+func NewDeliverer(addr string, t zmq.Type) (Deliverer, error) {
 	socket, err := zmq.NewSocket(t)
 	if err != nil {
 		return nil, err
 	}
 	return &deliverer{
-		bindnode:    string(info),
+		bindnode:    addr,
 		nowconnodes: make([]string, 0),
 		oldconnodes: make([]string, 0),
 		socket:      socket,
@@ -92,6 +102,10 @@ type deliverer struct {
 	nowconnodes []string //NodeInfo
 	oldconnodes []string //NodeInfo
 	socket      *zmq.Socket
+}
+
+func (s *deliverer) SetSubscribe(filter string) error {
+	return s.socket.SetSubscribe(filter)
 }
 
 func (d *deliverer) AddNodeInfo(info NodeInfo) {

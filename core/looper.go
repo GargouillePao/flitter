@@ -113,9 +113,10 @@ func (m *messageLooper) Loop() {
 			select {
 			case msg, isOpen := <-m.msgs:
 				if !isOpen {
-					fmt.Println(utils.Errf("Message Loop Closed"))
+					utils.Logf(utils.Errf, "Message Loop Closed")
 					m.term()
 				} else {
+					msg = msg.Copy()
 					action, state, _ := msg.GetInfo().Info()
 					if action == MA_Term || len(m.handlers) <= 0 {
 						m.term()

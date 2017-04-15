@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -18,27 +19,60 @@ func (n NodeInfo) GetLeaderInfo() (NodeInfo, error) {
 }
 
 func (n NodeInfo) GetEndpoint(local bool) (string, error) {
-	nodes := strings.Split(string(n), "/")
-	if len(nodes) > 0 {
+	addr, err := n.GetAddress()
+	if err != nil {
+		return "", err
+	}
+	colonpos := strings.LastIndexAny(addr, ":")
+	if colonpos > 0 && colonpos <= len(addr)-1 {
 		if local {
-			addr := strings.Split(nodes[len(nodes)-1], ":")
-			if len(addr) >= 1 {
-				port := addr[len(addr)-1]
-				return "tcp://*:" + port, nil
-			}
+			port := addr[colonpos+1:]
+			return "tcp://*:" + port, nil
 		} else {
-			return "tcp://" + nodes[len(nodes)-1], nil
+			host := addr[:colonpos]
+			port := addr[colonpos+1:]
+			return "tcp://" + host + ":" + port, nil
+		}
+	} else {
+		if local {
+			return "inproc://flitter" + addr, nil
 		}
 	}
 	return "", errors.New("Invalid node info")
 }
 
-func (n NodeInfo) GetAddressInfo() (string, error) {
+func (n NodeInfo) GetAddress() (string, error) {
 	nodes := strings.Split(string(n), "/")
 	if len(nodes) > 0 {
 		return nodes[len(nodes)-1], nil
 	}
 	return "", errors.New("Invalid node info")
+}
+func (n NodeInfo) GetPort() (int, error) {
+	addr, err := n.GetAddress()
+	if err != nil {
+		return 0, err
+	}
+	colonpos := strings.LastIndexAny(addr, ":")
+	if colonpos < 0 || colonpos >= len(addr)-1 {
+		err = errors.New("Invalid Address When Get Port")
+		return 0, err
+	}
+	port := addr[colonpos+1:]
+	return strconv.Atoi(port)
+}
+func (n NodeInfo) GetHost() (string, error) {
+	addr, err := n.GetAddress()
+	if err != nil {
+		return "", err
+	}
+	colonpos := strings.LastIndexAny(addr, ":")
+	if colonpos < 0 || colonpos >= len(addr)-1 {
+		err = errors.New("Invalid Address When Get Host")
+		return "", err
+	}
+	host := addr[:colonpos]
+	return host, err
 }
 
 const (
@@ -129,7 +163,7 @@ func (n *nodeTree) Add(address string) (newInfo NodeInfo) {
 }
 func (n *nodeTree) Search(address string) (newInfo NodeInfo, ok bool) {
 	searchedNode := n.FLoop(0, func(height int, node NodeTree) bool {
-		addr, err := node.GetInfo().GetAddressInfo()
+		addr, err := node.GetInfo().GetAddress()
 		if err == nil && addr == address {
 			return true
 		} else {

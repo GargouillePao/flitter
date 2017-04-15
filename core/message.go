@@ -14,7 +14,7 @@ type MessageAction uint8
 const (
 	_ MessageAction = iota
 	MA_Undefine
-	MA_Init
+	MA_Init_Heartbeat
 	MA_Refer
 	MA_Checkin
 	MA_Checkout
@@ -37,8 +37,8 @@ func (m MessageAction) Normalize() MessageAction {
 
 func (m MessageAction) String() (str string) {
 	switch m {
-	case MA_Init:
-		return "MA_Init"
+	case MA_Init_Heartbeat:
+		return "MA_Init_Heartbeat"
 	case MA_Undefine:
 		return "MA_Undefine"
 	case MA_Refer:
@@ -112,6 +112,7 @@ type Message interface {
 	Visit()
 	SetContent(buf []byte)
 	GetContent() (buf []byte)
+	Copy() Message
 	String() string
 }
 
@@ -127,18 +128,19 @@ type message struct {
 	content []byte
 }
 
+func (m *message) Copy() Message {
+	return NewMessage(m.info.Copy(), m.content)
+}
 func (m *message) Visit() {
 	m.visit += 1
 }
 func (m *message) GetVisitTimes() int {
 	return m.visit
 }
-
 func (m *message) GetInfo() (info MessageInfo) {
 	info = m.info
 	return
 }
-
 func (m *message) SetContent(buf []byte) {
 	m.content = buf
 	return
@@ -147,7 +149,6 @@ func (m *message) GetContent() (buf []byte) {
 	buf = m.content
 	return
 }
-
 func (m *message) String() string {
 	infostr := strings.Join(strings.Split(fmt.Sprintf("%v", m.info), "\n"), "\n\t")
 	str := fmt.Sprintf("Message[\n\tinfo:%s\n\tvisist:%d\n\tcontent:%s\n]", infostr, m.visit, m.content)
@@ -160,6 +161,7 @@ type MessageInfo interface {
 	SetAcion(action MessageAction)
 	SetState(state MessageState)
 	SetTime(_time time.Time)
+	Copy() MessageInfo
 	Info() (action MessageAction, state MessageState, _time time.Time)
 }
 
@@ -177,6 +179,14 @@ type messageInfo struct {
 	state    MessageState
 	sendtime int64
 	size     int
+}
+
+func (m *messageInfo) Copy() MessageInfo {
+	info := NewMessageInfo()
+	info.SetState(m.state)
+	info.SetAcion(m.action)
+	info.SetTime(time.Unix(0, m.sendtime))
+	return info
 }
 
 /** read out to the buf */
