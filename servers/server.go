@@ -2,117 +2,131 @@ package servers
 
 import (
 	"errors"
-	"flag"
 	"fmt"
-	core "github.com/GargouillePao/flitter/core"
-	utils "github.com/GargouillePao/flitter/utils"
+	"github.com/gargous/flitter/core"
+	"github.com/gargous/flitter/utils"
+	socketio "github.com/googollee/go-socket.io"
+	"net/http"
 )
 
-const __LooperSize int = 10
-
+type baseServer struct {
+	addr           string
+	name           string
+	srvices        map[ServiceType]Service
+	clientSrv      *socketio.Server
+	clientHandlers []func(so socketio.Socket)
+}
 type Server interface {
-	Config(ca ConfigAction, st ServerType, addr string) error
-	Init() error
-	Start()
-	Term()
-	String() string
+	Start() error
+	GetAddress() string
+	InitClientHandler() error
+	AddClientHandler(handler func(so socketio.Socket))
+	ConfigService(st ServiceType, srvice Service)
+	SendService(st ServiceType, msg core.Message) error
 }
 
-var __lauched bool = false
+func (b *baseServer) AddClientHandler(handler func(so socketio.Socket)) {
+	b.clientHandlers = append(b.clientHandlers, handler)
+}
 
-func Lauch() {
-	if !__lauched {
-		__lauched = true
-		verb := flag.Bool("v", false, "verbs")
-		filename := flag.String("log", "", "log in your path")
-		flag.Parse()
-		utils.InitLog(*verb, *filename)
+func (b *baseServer) InitClientHandler() (err error) {
+	if b.clientHandlers != nil {
+		b.clientHandlers = make([]func(so socketio.Socket), 0)
 	}
-}
-
-func transAddress(oldAddr string, st_from ServerType, st_to ServerType) (addr string, err error) {
-	var host string
-	var port int
-	info := core.NodeInfo(oldAddr)
-	host, err = info.GetHost()
+	b.clientSrv, err = socketio.NewServer(nil)
 	if err != nil {
 		return
 	}
-	port, err = info.GetPort()
+	err = b.clientSrv.On("error", func(so socketio.Socket, err error) {
+		utils.ErrIn(err, so.Id(), "Client")
+	})
 	if err != nil {
 		return
 	}
-	switch st_from {
-	case ST_Name:
-		switch st_to {
-		case ST_Watch:
-			addr = fmt.Sprintf("%s:%d", host, port)
-		default:
-			err = errors.New(fmt.Sprintf("Invalid Translate for %v to %v", st_from, st_to))
+
+	err = b.clientSrv.On("connection", func(so socketio.Socket) {
+		utils.Logf(utils.Infof, "Client Connected")
+		so.On("disconnection", func() {
+			utils.Logf(utils.Warningf, "Client Disconnected")
+		})
+		for _, handler := range b.clientHandlers {
+			handler(so)
 		}
-	case ST_Watch:
-		switch st_to {
-		case ST_Name:
-			addr = fmt.Sprintf("%s:%d", host, port)
-		case ST_HeartBeat:
-			addr = fmt.Sprintf("%s:%d", host, port+1)
-		default:
-			err = errors.New(fmt.Sprintf("Invalid Translate for %v to %v", st_from, st_to))
-		}
-	case ST_HeartBeat:
-		switch st_to {
-		case ST_Watch:
-			addr = fmt.Sprintf("%s:%d", host, port+2)
-		case ST_HeartBeat:
-			addr = fmt.Sprintf("%s:%d", host, port+3)
-		default:
-			err = errors.New(fmt.Sprintf("Invalid Translate for %v to %v", st_from, st_to))
-		}
-	default:
-		err = errors.New(fmt.Sprintf("Invalid Translate for %v to %v", st_from, st_to))
+	})
+	if err != nil {
+		return
+	}
+	http.Handle("/socket.io/", b.clientSrv)
+	addr, err := _ParseAddress(core.NodeInfo(b.GetAddress()), SRT_Undefine, SRT_Client)
+	if err != nil {
+		return
+	}
+	err = http.ListenAndServe(addr, nil)
+	return
+}
+func (b *baseServer) ConfigService(st ServiceType, srvice Service) {
+	b.srvices[st] = srvice
+}
+func (b *baseServer) SendService(st ServiceType, msg core.Message) (err error) {
+	srvice, ok := b.srvices[st]
+	if ok {
+		srvice.Push(msg)
+	} else {
+		err = errors.New("service " + st.String() + " hasnt config")
 	}
 	return
 }
+func (b *baseServer) GetAddress() (addr string) {
+	return b.addr
+}
 
-type ConfigAction uint8
-
-const (
-	_ ConfigAction = iota
-	CA_Send
-	CA_Recv
-)
+func _ParseAddress(info core.NodeInfo, fromSRT ServerType, toSRT ServerType) (addr string, err error) {
+	host, err := info.GetHost()
+	if err != nil {
+		return
+	}
+	port, err := info.GetPort()
+	if err != nil {
+		return
+	}
+	switch {
+	case fromSRT == SRT_Referee && toSRT == SRT_Worker:
+		addr = fmt.Sprintf("%s:%d", host, port)
+	case fromSRT == SRT_Worker && toSRT == SRT_Referee:
+		addr = fmt.Sprintf("%s:%d", host, port)
+	case fromSRT == SRT_Worker && toSRT == SRT_Worker:
+		addr = fmt.Sprintf("%s:%d", host, port+1)
+	case fromSRT == SRT_Workers && toSRT == SRT_Workers:
+		addr = fmt.Sprintf("%s:%d", host, port+2)
+	case fromSRT == SRT_Undefine && toSRT == SRT_Client:
+		addr = fmt.Sprintf("%s:%d", host, port+3)
+	}
+	return
+}
 
 type ServerType uint8
 
 const (
 	_ ServerType = iota
-	ST_Name
-	ST_Watch
-	ST_Quorum
-	ST_HeartBeat
-	ST_Service
+	SRT_Undefine
+	SRT_Referee
+	SRT_Worker
+	SRT_Workers
+	SRT_Client
 )
 
 func (s ServerType) String() string {
 	switch s {
-	case ST_Name:
-		return "ST_Name"
-	case ST_Watch:
-		return "ST_Watch"
-	case ST_Quorum:
-		return "ST_Quorum"
-	case ST_HeartBeat:
-		return "ST_HeartBeat"
-	case ST_Service:
-		return "ST_Service"
+	case SRT_Undefine:
+		return "Undefine"
+	case SRT_Referee:
+		return "Referee"
+	case SRT_Worker:
+		return "Worker"
+	case SRT_Workers:
+		return "Workers"
+	case SRT_Client:
+		return "Client"
 	}
 	return ""
 }
-
-type ClusterType uint8
-
-const (
-	_ ClusterType = iota
-	CT_Referee
-	CT_Worker
-)

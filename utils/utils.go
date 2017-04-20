@@ -61,7 +61,10 @@ func ErrIn(err error, info ...string) (ok bool) {
 }
 
 func CloseError() {
-	close(__errors)
+	if __errors != nil {
+		close(__errors)
+		__errors = nil
+	}
 }
 
 func Logf(logType func(format string, item ...interface{}) string, format string, item ...interface{}) {

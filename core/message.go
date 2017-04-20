@@ -3,7 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
-	utils "github.com/GargouillePao/flitter/utils"
+	utils "github.com/gargous/flitter/utils"
 	"strings"
 	"time"
 )
@@ -14,7 +14,7 @@ type MessageAction uint8
 const (
 	_ MessageAction = iota
 	MA_Undefine
-	MA_Init_Heartbeat
+	MA_Init
 	MA_Refer
 	MA_Checkin
 	MA_Checkout
@@ -29,7 +29,7 @@ const (
 )
 
 func (m MessageAction) Normalize() MessageAction {
-	if m > 9 {
+	if m > 13 {
 		m = MA_Undefine
 	}
 	return m
@@ -37,8 +37,8 @@ func (m MessageAction) Normalize() MessageAction {
 
 func (m MessageAction) String() (str string) {
 	switch m {
-	case MA_Init_Heartbeat:
-		return "MA_Init_Heartbeat"
+	case MA_Init:
+		return "MA_Init"
 	case MA_Undefine:
 		return "MA_Undefine"
 	case MA_Refer:
@@ -129,7 +129,12 @@ type message struct {
 }
 
 func (m *message) Copy() Message {
-	return NewMessage(m.info.Copy(), m.content)
+	msg := &message{
+		info:    m.info.Copy(),
+		content: m.GetContent(),
+		visit:   m.visit,
+	}
+	return msg
 }
 func (m *message) Visit() {
 	m.visit += 1

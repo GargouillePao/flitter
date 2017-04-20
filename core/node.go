@@ -79,99 +79,164 @@ const (
 	__TreeWidth int = 5
 )
 
+type Node struct {
+	Children []*Node
+	Info     NodeInfo
+	Weight   int
+}
+
+func NewNode(addr string) *Node {
+	return &Node{
+		Info:     NodeInfo(addr),
+		Weight:   0,
+		Children: make([]*Node, 0),
+	}
+}
+func (n *Node) Add(address string) NodeInfo {
+	n.Weight++
+	if len(n.Children) < __TreeWidth {
+		n.Children = append(n.Children, NewNode(address))
+		return NodeInfo(string(n.Info) + "/" + address)
+	} else {
+		nextnode := n.Children[0]
+		minweight := nextnode.Weight
+		for i := 1; i < __TreeWidth; i++ {
+			if minweight > n.Children[i].Weight {
+				minweight = n.Children[i].Weight
+				nextnode = n.Children[i]
+			}
+		}
+		return NodeInfo(n.Info + "/" + nextnode.Add(address))
+	}
+}
+func (n *Node) Remove(address string) NodeInfo {
+	// node := n.FLoop(0, func(height int, node Node) bool {
+	// 	if address == string(node) {
+	// 		//root
+	// 		return true
+	// 	}
+	// 	for i := 0; i < len(node.Children); i++ {
+	// 		if string(node.Children[i].Info) == address {
+	// 			//exsit
+	// 			//if the node to be remove has children
+	// 			if len(node.Children[i].Children) > 0 {
+	// 				for j := 0; len(node.Children[i].Children) > 0; j = (j + 1) % len(node.Children) {
+	// 					if i != j {
+	// 						node.Children[j].Children = append(node.Children[j].Children, node.Children[i].Children[0])
+	// 						if len(node.Children[i].Children) > 1 {
+	// 							node.Children[i].Children = node.Children[i].Children[1:]
+	// 						} else {
+	// 							node.Children[i].Children = make([]*Node, 0)
+	// 						}
+	// 					}
+	// 				}
+	// 			} else {
+	// 				if i >= len(node.Children)-1 {
+	// 					node.Children = node.Children[:i]
+	// 				} else if i <= 0 {
+	// 					node.Children = node.Children[i+1:]
+	// 				} else {
+	// 					node.Children = append(node.Children[:i], node.Children[i+1:]...)
+	// 				}
+	// 			}
+	// 			return true
+	// 		}
+	// 	}
+	// 	return false
+	// })
+	return ""
+}
+func (n *Node) FLoop(height int, cb func(height int, node NodeInfo) bool) (breakoutNode NodeInfo) {
+	height++
+	if cb(height, n.Info) {
+		breakoutNode = n.Info
+		return
+	}
+	for _, childNode := range (*n).Children {
+		bnode := childNode.FLoop(height, cb)
+		if bnode != "" {
+			breakoutNode = n.Info + "/" + bnode
+			return
+		}
+	}
+	return
+}
+func (n Node) String() string {
+	return fmt.Sprintf("info:%v,weight:%d,child:%p", n.Info, n.Weight, n.Children)
+}
+
 type NodeTree interface {
+	SetNode(node *Node)
+	GetNode() *Node
 	Search(address string) (newInfo NodeInfo, ok bool)
 	Add(address string) NodeInfo
 	Remove(address string)
-	GetWeight() int
-	GetInfo() NodeInfo
-	SetWeight(weight int)
-	FLoop(height int, cb func(height int, node NodeTree) bool) NodeTree
+	FLoop(height int, cb func(height int, node NodeInfo) bool) (breakoutNode NodeInfo)
 	String() string
 }
-
 type nodeTree struct {
-	childs []NodeTree
-	info   NodeInfo
-	weight int
+	node *Node
 }
 
-func NewNodeTree(info NodeInfo) NodeTree {
-	return &nodeTree{
-		info:   info,
-		childs: make([]NodeTree, 0),
-		weight: 0,
-	}
+func NewNodeTree() NodeTree {
+	return &nodeTree{}
+}
+func (n *nodeTree) SetNode(node *Node) {
+	n.node = node
+}
+func (n *nodeTree) GetNode() *Node {
+	return n.node
 }
 func (n *nodeTree) Remove(address string) {
 
 }
-func (n *nodeTree) SetWeight(weight int) {
-	n.weight = weight
-}
-func (n *nodeTree) GetWeight() int {
-	return n.weight
-}
-func (n *nodeTree) GetInfo() NodeInfo {
-	return n.info
-}
-func (n *nodeTree) FLoop(height int, cb func(height int, node NodeTree) bool) (breakoutNode NodeTree) {
-	height++
-	if cb(height, n) {
-		breakoutNode = n
+func (n *nodeTree) FLoop(height int, cb func(height int, node NodeInfo) bool) (breakoutNode NodeInfo) {
+	if n.node == nil {
+		return ""
 	}
-	for _, childNode := range n.childs {
-		_node := childNode.FLoop(height, cb)
-		if _node != nil {
-			breakoutNode = _node
-		}
-	}
+	breakoutNode = n.node.FLoop(height, cb)
 	return
 }
 func (n *nodeTree) String() string {
 	info := ""
-	n.FLoop(0, func(height int, node NodeTree) bool {
+	if n.node == nil {
+		return fmt.Sprintf("%p", n.node)
+	}
+	n.FLoop(0, func(height int, node NodeInfo) bool {
 		info += "\n"
 		info += strings.Repeat("\t", height)
-		info += fmt.Sprintf("info:%v,weight:%v", node.GetInfo(), node.GetWeight())
+		info += fmt.Sprintf("%v", node)
 		return false
 	})
 	return info
 }
-func (n *nodeTree) Add(address string) (newInfo NodeInfo) {
-	n.SetWeight(n.GetWeight() + 1)
-	if len(n.childs) > 0 {
-		nextnode := n.childs[0]
-		minweight := nextnode.GetWeight()
-		for i := 1; i < len(n.childs); i++ {
-			if minweight > n.childs[i].GetWeight() {
-				minweight = n.childs[i].GetWeight()
-				nextnode = n.childs[i]
-			}
-		}
-		if len(n.childs) >= __TreeWidth {
-			newInfo = nextnode.Add(address)
-		} else {
-			newInfo = NodeInfo(string(n.info) + "/" + address)
-			n.childs = append(n.childs, NewNodeTree(newInfo))
-		}
+func (n *nodeTree) Add(address string) NodeInfo {
+	if n.node == nil {
+		n.node = NewNode(address)
+		return n.node.Info
 	} else {
-		newInfo = NodeInfo(string(n.info) + "/" + address)
-		n.childs = append(n.childs, NewNodeTree(newInfo))
+		return n.node.Add(address)
 	}
-	return
 }
+
 func (n *nodeTree) Search(address string) (newInfo NodeInfo, ok bool) {
-	searchedNode := n.FLoop(0, func(height int, node NodeTree) bool {
-		addr, err := node.GetInfo().GetAddress()
+	newInfo = NodeInfo(address)
+	ok = false
+	if n.node == nil {
+		return
+	}
+	searchedNode := n.FLoop(0, func(height int, node NodeInfo) bool {
+		addr, err := node.GetAddress()
 		if err == nil && addr == address {
 			return true
 		} else {
 			return false
 		}
 	})
-	if searchedNode != nil {
-		return searchedNode.GetInfo(), true
+	if searchedNode != "" {
+		newInfo = searchedNode
+		ok = true
+		return
 	}
-	return "", false
+	return
 }

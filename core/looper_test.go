@@ -3,13 +3,13 @@ package core
 import (
 	"errors"
 	"fmt"
-	utils "github.com/GargouillePao/flitter/utils"
+	utils "github.com/gargous/flitter/utils"
 	"testing"
 	"time"
 )
 
 func TestMessageLooper(t *testing.T) {
-	//t.Parallel()
+	t.Parallel()
 	t.Log(utils.Norf("Start Msg Looper"))
 	looper := NewMessageLooper(10)
 	failTimes := 0

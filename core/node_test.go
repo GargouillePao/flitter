@@ -1,8 +1,7 @@
 package core
 
 import (
-	"fmt"
-	utils "github.com/GargouillePao/flitter/utils"
+	utils "github.com/gargous/flitter/utils"
 	"testing"
 )
 
@@ -31,49 +30,32 @@ func Test_NodeInfo(t *testing.T) {
 }
 func Test_NodeTree(t *testing.T) {
 	t.Log(utils.Norf("Start Node Tree"))
-	tree := NewNodeTree("root")
+	tree := NewNodeTree()
+	node := tree.Add("root")
 	_, ok := tree.Search("root")
-	if !ok {
-		t.Fatal(utils.Errf("Failed Search root %v", tree))
+	if !ok && node != "root" {
+		t.Fatal(utils.Errf("Failed Search root %v,%v", tree, node))
+	} else {
+		t.Log(utils.Infof("add root\n%v,%v", tree, node))
 	}
-	node1 := tree.Add("garg1")
+	tree.Add("garg1")
 	_, ok = tree.Search("garg1")
 	if !ok {
 		t.Fatal(utils.Errf("Failed Search garg1 %v", tree))
+	} else {
+		t.Log(utils.Infof("add garg1\n%v", tree))
 	}
 	tree.Add("garg2")
 	tree.Add("garg3")
 	tree.Add("garg4")
 	tree.Add("garg5")
-	node6 := tree.Add("garg6")
-	node7 := tree.Add("garg7")
-
-	if string(node1) == "root/garg1" {
-		t.Log(utils.Infof("OK garg1 %v,%v", tree, node1))
+	node = tree.Add("garg6")
+	tree.Add("garg7")
+	if node != "root/garg1/garg6" {
+		t.Fatal(utils.Errf("Failed Add garg6 %v", node))
 	} else {
-		t.Fatal(utils.Errf("Failed garg1 %v", tree))
+		t.Log(utils.Infof("add garg6 %v", node))
 	}
-	if string(node6) == "root/garg1/garg6" {
-		t.Log(utils.Infof("OK garg6 %v,%v", tree, node6))
-	} else {
-		t.Fatal(utils.Errf("Failed garg6 %v", tree))
-	}
-	if string(node7) == "root/garg2/garg7" {
-		t.Log(utils.Infof("OK garg7 %v,%v", tree, node7))
-	} else {
-		t.Fatal(utils.Errf("Failed garg7 %v", tree))
-	}
-	node, ok := tree.Search("garg7")
-	if !ok {
-		t.Fatal(utils.Errf("Search %v", ok))
-	}
-	for i := 0; i < 30; i++ {
-		tree.Add(fmt.Sprintf("garg1%v", i))
-	}
-	if string(node) == "root/garg2/garg7" {
-		t.Log(utils.Infof("OK Search garg7 %v,%v", tree, node))
-	} else {
-		t.Fatal(utils.Errf("Failed Search garg7 %v", tree))
-	}
+	t.Log(utils.Infof("OK \n%v", tree))
 	t.Log(utils.Norf("End Node Tree"))
 }

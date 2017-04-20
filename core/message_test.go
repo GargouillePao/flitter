@@ -1,7 +1,7 @@
 package core
 
 import (
-	utils "github.com/GargouillePao/flitter/utils"
+	utils "github.com/gargous/flitter/utils"
 	"testing"
 	"time"
 )

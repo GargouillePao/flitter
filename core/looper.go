@@ -1,11 +1,7 @@
 package core
 
 import (
-	"fmt"
-	utils "github.com/GargouillePao/flitter/utils"
-	"os"
-	"os/signal"
-	"syscall"
+	utils "github.com/gargous/flitter/utils"
 	"time"
 )
 
@@ -23,6 +19,7 @@ func (t *TimeTricker) Stop() {
 
 /*hand over the messages*/
 type MessageLooper interface {
+	GetHandler() map[MessageAction]MessageHandler
 	AddHandler(maxHandleTime time.Duration, action MessageAction, handler MessageHandler)
 	RemoveHandler(action MessageAction)
 	SetInterval(timestamp time.Duration, handler func(t time.Time) error)
@@ -36,7 +33,6 @@ func NewMessageLooper(bufferSize int) MessageLooper {
 		msgs:          make(chan Message, bufferSize),
 		handlers:      make(map[MessageAction]MessageHandler),
 		handleTricker: make(map[MessageAction]TimeTricker),
-		waiting:       make(chan bool, 0),
 	}
 }
 
@@ -45,7 +41,6 @@ type messageLooper struct {
 	msgs          chan Message
 	handlers      map[MessageAction]MessageHandler
 	handleTricker map[MessageAction]TimeTricker
-	waiting       chan bool
 }
 
 func (m *messageLooper) goHandle(handler MessageHandler, msg Message) {
@@ -82,6 +77,9 @@ func (m *messageLooper) AddHandler(maxHandleTime time.Duration, action MessageAc
 		}
 	}
 }
+func (m *messageLooper) GetHandler() map[MessageAction]MessageHandler {
+	return m.handlers
+}
 func (m *messageLooper) RemoveHandler(action MessageAction) {
 	delete(m.handlers, action)
 }
@@ -99,64 +97,53 @@ func (m *messageLooper) SetInterval(timestamp time.Duration, handler func(t time
 	}()
 }
 func (m *messageLooper) Loop() {
-	sigRecv := make(chan os.Signal, 1)
-	sigs := []os.Signal{syscall.SIGINT, syscall.SIGQUIT}
-	signal.Notify(sigRecv, sigs...)
-	go func() {
-		for sig := range sigRecv {
-			fmt.Println("Quit:" + sig.String())
-			m.term()
-		}
-	}()
-	go func() {
-		for {
-			select {
-			case msg, isOpen := <-m.msgs:
-				if !isOpen {
-					utils.Logf(utils.Errf, "Message Loop Closed")
+	for {
+		select {
+		case msg, isOpen := <-m.msgs:
+			if !isOpen {
+				utils.Logf(utils.Errf, "Message Loop Closed")
+				m.term()
+				return
+			} else {
+				msg = msg.Copy()
+				action, state, _ := msg.GetInfo().Info()
+				if action == MA_Term || len(m.handlers) <= 0 {
 					m.term()
-				} else {
-					msg = msg.Copy()
-					action, state, _ := msg.GetInfo().Info()
-					if action == MA_Term || len(m.handlers) <= 0 {
-						m.term()
-					}
-					//for retry
-					tricker, ok := m.handleTricker[action]
-					if ok {
-						func(tricker TimeTricker, state MessageState, action MessageAction) {
-							switch state {
-							case MS_Probe:
-								if tricker.timer == nil {
-									tricker.timer = time.AfterFunc(
-										tricker.duration,
-										func() {
-											msg.GetInfo().SetState(MS_Failed)
-											tricker.Stop()
-											m.handleTricker[action] = tricker
-											m.Push(msg)
-										},
-									)
-								}
-								m.handleTricker[action] = tricker
-							case MS_Succeed:
-								tricker.Stop()
-								m.handleTricker[action] = tricker
+					return
+				}
+				//for retry
+				tricker, ok := m.handleTricker[action]
+				if ok {
+					func(tricker TimeTricker, state MessageState, action MessageAction) {
+						switch state {
+						case MS_Probe:
+							if tricker.timer == nil {
+								tricker.timer = time.AfterFunc(
+									tricker.duration,
+									func() {
+										msg.GetInfo().SetState(MS_Failed)
+										tricker.Stop()
+										m.handleTricker[action] = tricker
+										m.Push(msg)
+									},
+								)
 							}
-						}(tricker, state, action)
-					}
-
-					handler := m.handlers[action]
-					if handler != nil {
-						m.goHandle(handler, msg)
-					}
+							m.handleTricker[action] = tricker
+						case MS_Succeed:
+							tricker.Stop()
+							m.handleTricker[action] = tricker
+						}
+					}(tricker, state, action)
 				}
 
+				handler := m.handlers[action]
+				if handler != nil {
+					m.goHandle(handler, msg)
+				}
 			}
+
 		}
-		m.waiting <- true
-	}()
-	<-m.waiting
+	}
 }
 
 func (m *messageLooper) Term() {
@@ -166,17 +153,17 @@ func (m *messageLooper) Term() {
 }
 
 func (m *messageLooper) term() {
-	close(m.msgs)
-	close(m.waiting)
+	if m.msgs != nil {
+		close(m.msgs)
+		m.msgs = nil
+	}
 	for _, tricker := range m.handleTricker {
 		if tricker.timer != nil {
 			tricker.timer.Stop()
-			tricker.timer.Reset(0)
+			tricker.timer = nil
 		}
 	}
 	utils.CloseError()
-	m = nil
-	os.Exit(0)
 }
 
 type MessageHandler func(msg Message) error
