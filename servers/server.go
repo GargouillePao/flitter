@@ -10,19 +10,18 @@ import (
 )
 
 type baseServer struct {
-	addr           string
-	name           string
+	path           core.NodePath
 	srvices        map[ServiceType]Service
 	clientSrv      *socketio.Server
 	clientHandlers []func(so socketio.Socket)
 }
 type Server interface {
 	Start() error
-	GetAddress() string
 	InitClientHandler() error
 	AddClientHandler(handler func(so socketio.Socket))
 	ConfigService(st ServiceType, srvice Service)
 	SendService(st ServiceType, msg core.Message) error
+	GetPath() core.NodePath
 }
 
 func (b *baseServer) AddClientHandler(handler func(so socketio.Socket)) {
@@ -57,11 +56,12 @@ func (b *baseServer) InitClientHandler() (err error) {
 		return
 	}
 	http.Handle("/socket.io/", b.clientSrv)
-	addr, err := _ParseAddress(core.NodeInfo(b.GetAddress()), SRT_Undefine, SRT_Client)
+
+	info, err := _ParseAddress(b.path, SRT_Undefine, SRT_Client)
 	if err != nil {
 		return
 	}
-	err = http.ListenAndServe(addr, nil)
+	err = http.ListenAndServe(info.GetAddress(), nil)
 	return
 }
 func (b *baseServer) ConfigService(st ServiceType, srvice Service) {
@@ -76,31 +76,31 @@ func (b *baseServer) SendService(st ServiceType, msg core.Message) (err error) {
 	}
 	return
 }
-func (b *baseServer) GetAddress() (addr string) {
-	return b.addr
+func (b *baseServer) GetPath() core.NodePath {
+	return b.path
 }
 
-func _ParseAddress(info core.NodeInfo, fromSRT ServerType, toSRT ServerType) (addr string, err error) {
-	host, err := info.GetHost()
-	if err != nil {
+func _ParseAddress(npath core.NodePath, fromSRT ServerType, toSRT ServerType) (info core.NodeInfo, err error) {
+	info, ok := npath.GetNodeInfo()
+	if !ok {
+		err = errors.New("Invalid NodePath")
 		return
 	}
-	port, err := info.GetPort()
-	if err != nil {
-		return
-	}
+	var addr string
 	switch {
 	case fromSRT == SRT_Referee && toSRT == SRT_Worker:
-		addr = fmt.Sprintf("%s:%d", host, port)
+		addr = fmt.Sprintf("%s:%d", info.Host, info.Port)
 	case fromSRT == SRT_Worker && toSRT == SRT_Referee:
-		addr = fmt.Sprintf("%s:%d", host, port)
+		addr = fmt.Sprintf("%s:%d", info.Host, info.Port)
 	case fromSRT == SRT_Worker && toSRT == SRT_Worker:
-		addr = fmt.Sprintf("%s:%d", host, port+1)
+		addr = fmt.Sprintf("%s:%d", info.Host, info.Port+1)
 	case fromSRT == SRT_Workers && toSRT == SRT_Workers:
-		addr = fmt.Sprintf("%s:%d", host, port+2)
+		addr = fmt.Sprintf("%s:%d", info.Host, info.Port+2)
 	case fromSRT == SRT_Undefine && toSRT == SRT_Client:
-		addr = fmt.Sprintf("%s:%d", host, port+3)
+		addr = fmt.Sprintf("%s:%d", info.Host, info.Port+3)
 	}
+	info = core.NewNodeInfo()
+	err = info.Parse(addr)
 	return
 }
 

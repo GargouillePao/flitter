@@ -37,7 +37,7 @@ func (s *scencesrvice) HandleClients() {
 		so.On("data", func(data string) {
 			utils.Logf(utils.Norf, "Client say:%v", data)
 			if s.accessable {
-				so.Emit("data", "Hi~ [reply your %v]", data)
+				so.Emit(fmt.Sprintf("data", "Hi~ [reply your %v]", data))
 			}
 		})
 		so.On("enter", func(name string) {
@@ -53,6 +53,14 @@ func (s *scencesrvice) HandleClients() {
 	})
 }
 func (s *scencesrvice) HandleMessages() {
+	s.looper.AddHandler(0, core.MA_Init, func(msg core.Message) (err error) {
+		_, state, _ := msg.GetInfo().Info()
+		switch state {
+		case core.MS_Probe:
+			s.accessable = true
+		}
+		return
+	})
 	s.looper.AddHandler(0, core.MA_Heartbeat, func(msg core.Message) (err error) {
 		_, state, _ := msg.GetInfo().Info()
 		switch state {

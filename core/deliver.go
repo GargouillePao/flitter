@@ -3,7 +3,6 @@ package core
 import (
 	"fmt"
 	zmq "github.com/pebbe/zmq4"
-	"strings"
 )
 
 type Subscriber interface {
@@ -11,15 +10,15 @@ type Subscriber interface {
 	String() string
 	Connect() error
 	Disconnect(all bool)
-	GetConnNodeInfo() []string
 	AddNodeInfo(info NodeInfo)
 	RemoveNodeInfo(info NodeInfo)
+	GetConnNodeInfo() []NodeInfo
 	Close()
 	Recv() (Message, error)
 }
 
 func NewSubscriber() (Subscriber, error) {
-	subscriber, err := NewDeliverer("", zmq.SUB)
+	subscriber, err := NewDeliverer(NewNodeInfo(), zmq.SUB)
 	if err != nil {
 		return nil, err
 	}
@@ -33,20 +32,20 @@ func NewSubscriber() (Subscriber, error) {
 type Publisher interface {
 	String() string
 	Bind() error
-	GetBindNodeInfo() string
+	GetBindNodeInfo() NodeInfo
 	Close()
 	Send(msg Message) error
 }
 
-func NewPublisher(addr string) (Publisher, error) {
-	return NewDeliverer(addr, zmq.PUB)
+func NewPublisher(info NodeInfo) (Publisher, error) {
+	return NewDeliverer(info, zmq.PUB)
 }
 
 type Sender interface {
 	String() string
 	AddNodeInfo(info NodeInfo)
 	RemoveNodeInfo(info NodeInfo)
-	GetConnNodeInfo() []string
+	GetConnNodeInfo() []NodeInfo
 	Connect() error
 	Disconnect(all bool)
 	Close()
@@ -54,19 +53,19 @@ type Sender interface {
 }
 
 func NewSender() (Sender, error) {
-	return NewDeliverer("", zmq.DEALER)
+	return NewDeliverer(NewNodeInfo(), zmq.DEALER)
 }
 
 type Receiver interface {
 	String() string
 	Bind() error
-	GetBindNodeInfo() string
+	GetBindNodeInfo() NodeInfo
 	Close()
 	Recv() (Message, error)
 }
 
-func NewReceiver(addr string) (Receiver, error) {
-	return NewDeliverer(addr, zmq.DEALER)
+func NewReceiver(info NodeInfo) (Receiver, error) {
+	return NewDeliverer(info, zmq.DEALER)
 }
 
 type Deliverer interface {
@@ -74,8 +73,8 @@ type Deliverer interface {
 	SetSubscribe(filter string) error
 	AddNodeInfo(info NodeInfo)
 	RemoveNodeInfo(info NodeInfo)
-	GetConnNodeInfo() []string
-	GetBindNodeInfo() string
+	GetConnNodeInfo() []NodeInfo
+	GetBindNodeInfo() NodeInfo
 	Bind() error
 	Connect() error
 	Disconnect(all bool)
@@ -84,23 +83,23 @@ type Deliverer interface {
 	Recv() (Message, error)
 }
 
-func NewDeliverer(addr string, t zmq.Type) (Deliverer, error) {
+func NewDeliverer(info NodeInfo, t zmq.Type) (Deliverer, error) {
 	socket, err := zmq.NewSocket(t)
 	if err != nil {
 		return nil, err
 	}
 	return &deliverer{
-		bindnode:    addr,
-		nowconnodes: make([]string, 0),
-		oldconnodes: make([]string, 0),
+		bindnode:    info,
+		nowconnodes: make([]NodeInfo, 0),
+		oldconnodes: make([]NodeInfo, 0),
 		socket:      socket,
 	}, err
 }
 
 type deliverer struct {
-	bindnode    string   //NodeInfo
-	nowconnodes []string //NodeInfo
-	oldconnodes []string //NodeInfo
+	bindnode    NodeInfo
+	nowconnodes []NodeInfo
+	oldconnodes []NodeInfo
 	socket      *zmq.Socket
 }
 
@@ -110,20 +109,19 @@ func (s *deliverer) SetSubscribe(filter string) error {
 
 func (d *deliverer) AddNodeInfo(info NodeInfo) {
 	innow := false
-	infostr := string(info)
 	for _, nownode := range d.nowconnodes {
-		if nownode == infostr {
+		if nownode == info {
 			innow = true
 		}
 	}
 	if !innow {
-		d.nowconnodes = append(d.nowconnodes, infostr)
+		d.nowconnodes = append(d.nowconnodes, info)
 	}
 
 	inold := false
 	oldindex := 0
 	for index, oldnode := range d.oldconnodes {
-		if oldnode == infostr {
+		if oldnode == info {
 			inold = true
 			oldindex = index
 		}
@@ -139,11 +137,10 @@ func (d *deliverer) AddNodeInfo(info NodeInfo) {
 }
 
 func (d *deliverer) RemoveNodeInfo(info NodeInfo) {
-	infostr := string(info)
 	innow := false
 	nowindex := 0
 	for index, nownode := range d.nowconnodes {
-		if nownode == infostr {
+		if nownode == info {
 			innow = true
 			nowindex = index
 		}
@@ -157,65 +154,53 @@ func (d *deliverer) RemoveNodeInfo(info NodeInfo) {
 	}
 	inold := false
 	for _, oldnode := range d.oldconnodes {
-		if oldnode == infostr {
+		if oldnode == info {
 			inold = true
 		}
 	}
 	if !inold {
-		d.oldconnodes = append(d.oldconnodes, infostr)
+		d.oldconnodes = append(d.oldconnodes, info)
 	}
 }
 
-func (d *deliverer) GetConnNodeInfo() []string {
+func (d *deliverer) GetConnNodeInfo() []NodeInfo {
 	return d.nowconnodes
 }
 
 func (d *deliverer) Bind() error {
-	endpoint, err := NodeInfo(d.bindnode).GetEndpoint(true)
-	if err != nil {
-		return err
-	}
-	err = d.socket.Bind(endpoint)
-	return err
+	endpoint := d.bindnode.GetEndpoint(true)
+	return d.socket.Bind(endpoint)
 }
-func (d *deliverer) GetBindNodeInfo() string {
+func (d *deliverer) GetBindNodeInfo() NodeInfo {
 	return d.bindnode
 }
 func (d *deliverer) Disconnect(all bool) {
-	var oldconnodes []string = make([]string, 0)
+	var oldconnodes []NodeInfo = make([]NodeInfo, 0)
 	for _, oldnode := range d.oldconnodes {
-		oldend, err := NodeInfo(oldnode).GetEndpoint(false)
-		if err == nil {
-			d.socket.Disconnect(oldend)
-		} else {
-			oldconnodes = append(oldconnodes, oldnode)
-		}
+		oldend := oldnode.GetEndpoint(false)
+		d.socket.Disconnect(oldend)
 	}
 	d.oldconnodes = oldconnodes
 	if all {
-		var nowconnodes []string = make([]string, 0)
+		var nowconnodes []NodeInfo = make([]NodeInfo, 0)
 		for _, nownode := range d.nowconnodes {
-			newend, err := NodeInfo(nownode).GetEndpoint(false)
-			if err == nil {
-				d.socket.Disconnect(newend)
-			}
+			newend := nownode.GetEndpoint(false)
+			d.socket.Disconnect(newend)
 		}
 		d.nowconnodes = nowconnodes
 	}
 }
 
-func (d *deliverer) Connect() error {
+func (d *deliverer) Connect() (err error) {
 	d.Disconnect(false)
-	var errout error
 	for _, nownode := range d.nowconnodes {
-		nowend, err := NodeInfo(nownode).GetEndpoint(false)
-		if err == nil {
-			errout = d.socket.Connect(nowend)
-		} else {
-			errout = err
+		nowend := nownode.GetEndpoint(false)
+		err = d.socket.Connect(nowend)
+		if err != nil {
+			return
 		}
 	}
-	return errout
+	return
 }
 
 func (d *deliverer) Close() {
@@ -252,7 +237,13 @@ func (d *deliverer) Recv() (Message, error) {
 	return msg, err
 }
 func (d deliverer) String() string {
-	nowcstr := strings.Join(d.nowconnodes, "\n\t\t")
-	oldcstr := strings.Join(d.oldconnodes, "\n\t\t")
+	nowcstr := ""
+	oldcstr := ""
+	for _, nownodes := range d.nowconnodes {
+		nowcstr += fmt.Sprintf("%d\n\t\t", nownodes)
+	}
+	for _, oldnodes := range d.nowconnodes {
+		oldcstr += fmt.Sprintf("%d\n\t\t", oldnodes)
+	}
 	return fmt.Sprintf("deliverer[\n\tbind:%v\n\tconnect:\n\t%s\n\twaist:\n\t%s\n]", d.bindnode, nowcstr, oldcstr)
 }

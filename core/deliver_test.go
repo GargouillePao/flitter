@@ -12,7 +12,9 @@ func Test_Sender(t *testing.T) {
 	if err != nil {
 		t.Fatal(utils.Errf("sender err:%v", err))
 	}
-	sender.AddNodeInfo("/127.0.0.1:7000/127.0.0.1:8000")
+	info := NewNodeInfo()
+	info.Parse("127.0.0.1:8000")
+	sender.AddNodeInfo(info)
 	err = sender.Connect()
 	if err != nil {
 		t.Fatal(utils.Errf("connect err:%v", err))
@@ -29,7 +31,9 @@ func Test_Sender(t *testing.T) {
 func Test_Receiver(t *testing.T) {
 	t.Parallel()
 	t.Log(utils.Norf("Start Receiver"))
-	receiver, err := NewReceiver("*:8000")
+	info := NewNodeInfo()
+	info.Parse("*:8000")
+	receiver, err := NewReceiver(info)
 	if err != nil {
 		t.Fatal(utils.Errf("receiver err:%v,%v", err, receiver))
 	}

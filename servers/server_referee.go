@@ -7,7 +7,7 @@ import (
 )
 
 type Referee interface {
-	SendToWroker(msg core.Message, node core.NodeInfo) error
+	SendToWroker(msg core.Message, npath core.NodePath) error
 	Server
 }
 type refereesrv struct {
@@ -17,7 +17,7 @@ type refereesrv struct {
 	baseServer
 }
 
-func NewReferee(name string, addr string) (referee Referee, err error) {
+func NewReferee(path core.NodePath) (referee Referee, err error) {
 	senderR2W, err := core.NewSender()
 	if err != nil {
 		return
@@ -25,14 +25,13 @@ func NewReferee(name string, addr string) (referee Referee, err error) {
 	_referee := &refereesrv{
 		senderR2W: senderR2W,
 	}
-	_referee.addr = addr
-	_referee.name = name
+	_referee.path = path
 	_referee.srvices = make(map[ServiceType]Service)
-	_addr, err := _ParseAddress(core.NodeInfo(addr), SRT_Worker, SRT_Referee)
+	info, err := _ParseAddress(path, SRT_Worker, SRT_Referee)
 	if err != nil {
 		return
 	}
-	recverW2R, err := core.NewReceiver(_addr)
+	recverW2R, err := core.NewReceiver(info)
 	if err != nil {
 		return
 	}
@@ -41,13 +40,13 @@ func NewReferee(name string, addr string) (referee Referee, err error) {
 	return
 }
 
-func (r *refereesrv) SendToWroker(msg core.Message, node core.NodeInfo) (err error) {
-	addr, err := _ParseAddress(node, SRT_Referee, SRT_Worker)
+func (r *refereesrv) SendToWroker(msg core.Message, npath core.NodePath) (err error) {
+	info, err := _ParseAddress(npath, SRT_Referee, SRT_Worker)
 	if err != nil {
 		return
 	}
 	r.senderR2W.Disconnect(true)
-	r.senderR2W.AddNodeInfo(core.NodeInfo(addr))
+	r.senderR2W.AddNodeInfo(info)
 	err = r.senderR2W.Connect()
 	err = r.senderR2W.Send(msg)
 	return
@@ -62,7 +61,7 @@ func (r *refereesrv) Start() (err error) {
 		for {
 			msg, err := r.recverW2R.Recv()
 			if err != nil {
-				utils.ErrIn(err, "Receive From Worker", "At Referee_"+r.name)
+				utils.ErrIn(err, "Receive From Worker", "At Referee_", string(r.path))
 				continue
 			}
 			if msg != nil {

@@ -35,11 +35,13 @@ func CloseMongo() {
 
 type NodeTreeSaver interface {
 	Load() error
-	Save(action SaveAction, nodeAddr string) error
+	Save(action SaveAction, npath core.NodePath) error
+	SaveLastItem(action SaveAction) error
 }
 
 type nodeTreeSaver struct {
 	id         string
+	recentItem nodeSaveItem
 	collection *mgo.Collection
 	tree       core.NodeTree
 }
@@ -47,7 +49,7 @@ type nodeTreeSaver struct {
 type nodeSaveItem struct {
 	Name     string
 	Action   SaveAction
-	NodeAddr string
+	NodePath core.NodePath
 }
 
 func NewNodeTreeSaver(tree core.NodeTree) NodeTreeSaver {
@@ -72,16 +74,27 @@ func (n *nodeTreeSaver) Load() (err error) {
 	for i := 0; i < len(actions); i++ {
 		switch actions[i].Action {
 		case SA_Add:
-			n.tree.Add(actions[i].NodeAddr)
+			n.tree.Add(actions[i].NodePath)
 		case SA_Remove:
-			n.tree.Remove(actions[i].NodeAddr)
+			n.tree.Remove(actions[i].NodePath)
 		}
 	}
 	return
 }
-func (n *nodeTreeSaver) Save(action SaveAction, nodeAddr string) error {
+func (n *nodeTreeSaver) Save(action SaveAction, npath core.NodePath) (err error) {
 	if action == SA_Clean {
-		return n.collection.Remove(bson.M{"name": n.id})
+		err = n.collection.Remove(bson.M{"name": n.id})
+		return
 	}
-	return n.collection.Insert(nodeSaveItem{Name: n.id, Action: action, NodeAddr: nodeAddr})
+	err = n.collection.Insert(nodeSaveItem{Name: n.id, Action: action, NodePath: npath})
+	return
+}
+func (n *nodeTreeSaver) SaveLastItem(action SaveAction) (err error) {
+	switch action {
+	case SA_Add:
+		err = n.Save(action, n.tree.GetLastAdd())
+	case SA_Remove:
+		err = n.Save(action, n.tree.GetLastRemove())
+	}
+	return
 }

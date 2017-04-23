@@ -45,12 +45,8 @@ func (h *heartbeatsrv) HandleMessages() {
 		_, state, _ := msg.GetInfo().Info()
 		switch state {
 		case core.MS_Probe:
-			var leader core.NodeInfo
-			leader, err = core.NodeInfo(msg.GetContent()).GetLeaderInfo()
-			if err != nil {
-				return
-			}
-			if leader == "" {
+			leader, ok := core.NodePath(msg.GetContent()).GetLeaderPath()
+			if !ok {
 				msgInfo := msg.GetInfo()
 				msgInfo.SetState(core.MS_Succeed)
 				h.looper.Push(core.NewMessage(msgInfo, []byte("")))
@@ -61,7 +57,7 @@ func (h *heartbeatsrv) HandleMessages() {
 			}
 
 		case core.MS_Ask:
-			err = h.worker.SubscribeWorker(core.NodeInfo(msg.GetContent()))
+			err = h.worker.SubscribeWorker(core.NodePath(msg.GetContent()))
 			if err != nil {
 				return
 			}

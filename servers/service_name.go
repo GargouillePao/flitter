@@ -37,7 +37,7 @@ func (n *namesrv) Init(srv interface{}) error {
 	n.HandleClients()
 	return nil
 }
-func (n *namesrv) SearchNodeInfo(address string) core.NodeInfo {
+func (n *namesrv) SearchNodeInfo(npath core.NodePath) (opath core.NodePath, err error) {
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
 	if n.nameTree == nil {
@@ -45,34 +45,40 @@ func (n *namesrv) SearchNodeInfo(address string) core.NodeInfo {
 		n.nameTreeSaver = data.NewNodeTreeSaver(n.nameTree)
 		n.nameTreeSaver.Load()
 	}
-	node, ok := n.nameTree.Search(address)
+	info, ok := npath.GetNodeInfo()
 	if !ok {
-		node = n.nameTree.Add(address)
-		//n.nameTreeSaver.Save(data.SA_Add, address)
+		err = errors.New("Invalid NodeInfo When SearchNodeInfo")
+		return
+	}
+	opath, ok = n.nameTree.Search(info)
+	if !ok {
+		opath, err = n.nameTree.Add(npath)
+		if err != nil {
+			return
+		}
+		//n.nameTreeSaver.SaveLastItem(data.SA_Add)
 	}
 	utils.Logf(utils.Norf, "Search\n%v", n.nameTree)
-	return node
+	return
 }
-func (n *namesrv) SearchNodeInfoAtHeight(index int, height int) core.NodeInfo {
+func (n *namesrv) SearchNodeInfoWithGroupName(groupname string, index int) core.NodePath {
 	if n.nameTree == nil {
 		return ""
 	}
 	_index := 0
-	targetAddress := n.nameTree.FLoop(0, func(_height int, node core.NodeInfo) bool {
-		if height == _height {
-			if _index == index {
-				return true
-			}
-			_index++
+	targetAddress := n.nameTree.FLoopGroup(groupname, func(height int, node core.NodeInfo) bool {
+		if _index == index {
+			return true
 		}
+		_index++
 		return false
 	})
 	return targetAddress
 }
 func (n *namesrv) HandleClients() {
 	n.referee.AddClientHandler(func(so socketio.Socket) {
-		so.On("refer address", func(index int, height int) {
-			addr := n.SearchNodeInfoAtHeight(index, height)
+		so.On("refer address", func(name string, index int) {
+			addr := n.SearchNodeInfoWithGroupName(name, index)
 			so.Emit("refer address", addr)
 		})
 	})
@@ -82,10 +88,13 @@ func (n *namesrv) HandleMessages() {
 		_, state, _ := msg.GetInfo().Info()
 		switch state {
 		case core.MS_Ask:
-			nodeinfo := n.SearchNodeInfo(string(msg.GetContent()))
+			nodeinfo, err := n.SearchNodeInfo(core.NodePath(msg.GetContent()))
+			if err != nil {
+				return err
+			}
 			msg.SetContent([]byte(nodeinfo))
 			msg.GetInfo().SetState(core.MS_Succeed)
-			err := n.referee.SendToWroker(msg, nodeinfo)
+			err = n.referee.SendToWroker(msg, nodeinfo)
 			if err != nil {
 				return err
 			}

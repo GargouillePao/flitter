@@ -11,30 +11,30 @@ import (
 
 type WatchService interface {
 	Service
-	ConfigRefereeServer(addr string)
+	ConfigRefereeServer(npath core.NodePath)
 }
 type watchsrv struct {
 	worker             Worker
-	refereeServers     []string
+	refereeServers     []core.NodePath
 	refereeServerIndex int
 	baseService
 }
 
 func NewWatchService() WatchService {
 	_watchsrv := &watchsrv{
-		refereeServers:     make([]string, 0),
+		refereeServers:     make([]core.NodePath, 0),
 		refereeServerIndex: 0,
 	}
 	_watchsrv.looper = core.NewMessageLooper(__LooperSize)
 	return _watchsrv
 }
-func (w *watchsrv) ConfigRefereeServer(addr string) {
-	w.refereeServers = append(w.refereeServers, addr)
+func (w *watchsrv) ConfigRefereeServer(npath core.NodePath) {
+	w.refereeServers = append(w.refereeServers, npath)
 }
-func (w *watchsrv) getRefereeServer() core.NodeInfo {
-	info := w.refereeServers[w.refereeServerIndex]
+func (w *watchsrv) getRefereeServer() core.NodePath {
+	tpath := w.refereeServers[w.refereeServerIndex]
 	w.refereeServerIndex = (w.refereeServerIndex + 1) % len(w.refereeServers)
-	return core.NodeInfo(info)
+	return tpath
 }
 func (w *watchsrv) Init(srv interface{}) error {
 	w.worker = srv.(Worker)
@@ -47,21 +47,15 @@ func (w *watchsrv) HandleMessages() {
 		switch state {
 		case core.MS_Probe:
 			msg.GetInfo().SetState(core.MS_Ask)
-			msg.SetContent([]byte(w.worker.GetAddress()))
+			msg.SetContent([]byte(w.worker.GetPath()))
 			err = w.worker.SendToReferee(msg, w.getRefereeServer())
 			if err != nil {
 				return err
 			}
 		case core.MS_Succeed:
-			nodeinfo := core.NodeInfo(string(msg.GetContent()))
-			var leader core.NodeInfo
-			leader, err = nodeinfo.GetLeaderInfo()
-			if err != nil {
-				msg.GetInfo().SetState(core.MS_Failed)
-				w.looper.Push(msg)
-				return
-			}
-			if leader != "" {
+			npath := core.NodePath(msg.GetContent())
+			_, ok := npath.GetLeaderPath()
+			if ok {
 				msg.GetInfo().SetAcion(core.MA_Init)
 				msg.GetInfo().SetState(core.MS_Probe)
 				w.looper.Push(msg)

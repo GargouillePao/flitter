@@ -3,76 +3,123 @@ package core
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 )
 
-type NodeInfo string
+const (
+	__anonymous string = "Anonymous"
+)
 
-func (n NodeInfo) GetLeaderInfo() (NodeInfo, error) {
-	nodes := strings.Split(string(n), "/")
-	if len(nodes) > 0 {
-		nodes = nodes[:len(nodes)-1]
-		return NodeInfo(strings.Join(nodes, "/")), nil
+type NodePath string
+
+func NewNodePath(infos ...NodeInfo) NodePath {
+	var npath NodePath
+	for index, info := range infos {
+		if index != 0 {
+			npath += "/"
+		}
+		npath += NodePath(info.String())
 	}
-	return "", errors.New("Invalid node info")
+	return npath
+}
+func (n *NodePath) Append(infos ...NodeInfo) {
+	opath := *n
+	npath := NewNodePath(infos...)
+	*n = opath + "/" + npath
+}
+func (n *NodePath) AppendPath(npath NodePath) {
+	*n = *n + "/" + npath
+}
+func (n NodePath) GetLeaderPath() (lpath NodePath, ok bool) {
+	npath := strings.Split(string(n), "/")
+	if len(npath) <= 1 {
+		ok = false
+		return
+	}
+	lpath = NodePath(strings.Join(npath[:len(npath)-1], "/"))
+	ok = true
+	return
+}
+func (n NodePath) GetNodeInfo() (info NodeInfo, ok bool) {
+	npath := strings.Split(string(n), "/")
+	if len(npath) < 1 {
+		ok = false
+		return
+	}
+	info = NewNodeInfo()
+	if info.Parse(npath[len(npath)-1]) != nil {
+		ok = false
+	}
+	ok = true
+	return
 }
 
-func (n NodeInfo) GetEndpoint(local bool) (string, error) {
-	addr, err := n.GetAddress()
-	if err != nil {
-		return "", err
+type NodeInfo struct {
+	Name string
+	Host string
+	Port int
+}
+
+func NewNodeInfo() NodeInfo {
+	return NodeInfo{}
+}
+func (n *NodeInfo) Parse(info string) (err error) {
+	attrs := strings.Split(info, "@")
+	var (
+		name string
+		addr string
+	)
+	switch len(attrs) {
+	case 1:
+		addr = attrs[0]
+		name = __anonymous
+	case 2:
+		name = attrs[0]
+		addr = attrs[1]
+	default:
+		err = errors.New("Invalid NodeInfo")
+		return
 	}
-	colonpos := strings.LastIndexAny(addr, ":")
-	if colonpos > 0 && colonpos <= len(addr)-1 {
-		if local {
-			port := addr[colonpos+1:]
-			return "tcp://*:" + port, nil
-		} else {
-			host := addr[:colonpos]
-			port := addr[colonpos+1:]
-			return "tcp://" + host + ":" + port, nil
+	n.Name = name
+	colon := strings.LastIndexAny(addr, ":")
+	if colon > 0 && colon < len(addr)-1 {
+		n.Host = addr[:colon]
+		n.Port, err = strconv.Atoi(addr[colon+1:])
+		return
+	}
+	err = errors.New("Invalid NodeInfo")
+	return
+}
+
+func (n *NodeInfo) RandName() {
+	if n.Name == __anonymous {
+		name := ""
+		strpull := "abcdefghijklmnopqrstuvwxyz1234567890"
+		for i := 0; i < 5; i++ {
+			name += fmt.Sprintf("%c", strpull[rand.Intn(len(strpull))])
 		}
+		n.Name = name
+	}
+	return
+}
+
+func (n NodeInfo) GetEndpoint(local bool) (str string) {
+	if local {
+		str = fmt.Sprintf("tcp://*:%d", n.Port)
 	} else {
-		if local {
-			return "inproc://flitter" + addr, nil
-		}
+		str = fmt.Sprintf("tcp://%s:%d", n.Host, n.Port)
 	}
-	return "", errors.New("Invalid node info")
+	return
+}
+func (n NodeInfo) GetAddress() (str string) {
+	str = fmt.Sprintf("%s:%d", n.Host, n.Port)
+	return
 }
 
-func (n NodeInfo) GetAddress() (string, error) {
-	nodes := strings.Split(string(n), "/")
-	if len(nodes) > 0 {
-		return nodes[len(nodes)-1], nil
-	}
-	return "", errors.New("Invalid node info")
-}
-func (n NodeInfo) GetPort() (int, error) {
-	addr, err := n.GetAddress()
-	if err != nil {
-		return 0, err
-	}
-	colonpos := strings.LastIndexAny(addr, ":")
-	if colonpos < 0 || colonpos >= len(addr)-1 {
-		err = errors.New("Invalid Address When Get Port")
-		return 0, err
-	}
-	port := addr[colonpos+1:]
-	return strconv.Atoi(port)
-}
-func (n NodeInfo) GetHost() (string, error) {
-	addr, err := n.GetAddress()
-	if err != nil {
-		return "", err
-	}
-	colonpos := strings.LastIndexAny(addr, ":")
-	if colonpos < 0 || colonpos >= len(addr)-1 {
-		err = errors.New("Invalid Address When Get Host")
-		return "", err
-	}
-	host := addr[:colonpos]
-	return host, err
+func (n NodeInfo) String() string {
+	return fmt.Sprintf("%s@%s", n.Name, n.GetAddress())
 }
 
 const (
@@ -85,77 +132,86 @@ type Node struct {
 	Weight   int
 }
 
-func NewNode(addr string) *Node {
+func NewNode(info NodeInfo) *Node {
 	return &Node{
-		Info:     NodeInfo(addr),
+		Info:     info,
 		Weight:   0,
 		Children: make([]*Node, 0),
 	}
 }
-func (n *Node) Add(address string) NodeInfo {
+func (n *Node) appendChild(info NodeInfo) NodePath {
+	if info.Name == __anonymous {
+		info.RandName()
+		n.Children = append(n.Children, NewNode(info))
+		return NewNodePath(n.Info, info)
+	}
+	n.Children = append(n.Children, NewNode(info))
+	return NewNodePath(n.Info, info)
+}
+func (n *Node) AddAt(info NodeInfo, parentName string) (npath NodePath, ok bool) {
+	ok = false
+	tnode := n.FLoopForNode(0, func(height int, tinfo NodeInfo) bool {
+		if parentName == tinfo.Name {
+			return true
+		}
+		return false
+	})
+	if tnode != nil {
+		ok = true
+		npath = NewNodePath(n.Info)
+		npath.AppendPath(tnode.Add(info))
+		return
+	}
+	return
+}
+func (n *Node) Add(info NodeInfo) NodePath {
 	n.Weight++
 	if len(n.Children) < __TreeWidth {
-		n.Children = append(n.Children, NewNode(address))
-		return NodeInfo(string(n.Info) + "/" + address)
+		return n.appendChild(info)
 	} else {
 		nextnode := n.Children[0]
 		minweight := nextnode.Weight
-		for i := 1; i < __TreeWidth; i++ {
+		for i := 1; i < len(n.Children); i++ {
 			if minweight > n.Children[i].Weight {
 				minweight = n.Children[i].Weight
 				nextnode = n.Children[i]
 			}
 		}
-		return NodeInfo(n.Info + "/" + nextnode.Add(address))
+		cpath := nextnode.Add(info)
+		npath := NewNodePath(n.Info)
+		npath.AppendPath(cpath)
+		return npath
 	}
 }
-func (n *Node) Remove(address string) NodeInfo {
-	// node := n.FLoop(0, func(height int, node Node) bool {
-	// 	if address == string(node) {
-	// 		//root
-	// 		return true
-	// 	}
-	// 	for i := 0; i < len(node.Children); i++ {
-	// 		if string(node.Children[i].Info) == address {
-	// 			//exsit
-	// 			//if the node to be remove has children
-	// 			if len(node.Children[i].Children) > 0 {
-	// 				for j := 0; len(node.Children[i].Children) > 0; j = (j + 1) % len(node.Children) {
-	// 					if i != j {
-	// 						node.Children[j].Children = append(node.Children[j].Children, node.Children[i].Children[0])
-	// 						if len(node.Children[i].Children) > 1 {
-	// 							node.Children[i].Children = node.Children[i].Children[1:]
-	// 						} else {
-	// 							node.Children[i].Children = make([]*Node, 0)
-	// 						}
-	// 					}
-	// 				}
-	// 			} else {
-	// 				if i >= len(node.Children)-1 {
-	// 					node.Children = node.Children[:i]
-	// 				} else if i <= 0 {
-	// 					node.Children = node.Children[i+1:]
-	// 				} else {
-	// 					node.Children = append(node.Children[:i], node.Children[i+1:]...)
-	// 				}
-	// 			}
-	// 			return true
-	// 		}
-	// 	}
-	// 	return false
-	// })
-	return ""
+func (n *Node) Remove(info NodeInfo) NodeInfo {
+	return NewNodeInfo()
 }
-func (n *Node) FLoop(height int, cb func(height int, node NodeInfo) bool) (breakoutNode NodeInfo) {
+func (n *Node) FLoop(height int, cb func(height int, node NodeInfo) bool) (breakoutPath NodePath) {
 	height++
 	if cb(height, n.Info) {
-		breakoutNode = n.Info
+		breakoutPath = NewNodePath(n.Info)
 		return
 	}
 	for _, childNode := range (*n).Children {
 		bnode := childNode.FLoop(height, cb)
 		if bnode != "" {
-			breakoutNode = n.Info + "/" + bnode
+			breakoutPath = NewNodePath(n.Info)
+			breakoutPath.AppendPath(bnode)
+			return
+		}
+	}
+	return
+}
+func (n *Node) FLoopForNode(height int, cb func(height int, node NodeInfo) bool) (breakoutNode *Node) {
+	height++
+	if cb(height, n.Info) {
+		breakoutNode = n
+		return
+	}
+	for _, childNode := range (*n).Children {
+		pnode := childNode.FLoopForNode(height, cb)
+		if pnode != nil {
+			breakoutNode = pnode
 			return
 		}
 	}
@@ -168,14 +224,21 @@ func (n Node) String() string {
 type NodeTree interface {
 	SetNode(node *Node)
 	GetNode() *Node
-	Search(address string) (newInfo NodeInfo, ok bool)
-	Add(address string) NodeInfo
-	Remove(address string)
-	FLoop(height int, cb func(height int, node NodeInfo) bool) (breakoutNode NodeInfo)
+	GetLastAdd() NodePath
+	GetLastRemove() NodePath
+	Search(info NodeInfo) (npath NodePath, ok bool)
+	SearchWithName(name string) (npath NodePath, ok bool)
+	SearchWithAddr(addr string) (npath NodePath, ok bool)
+	Add(ipath NodePath) (npath NodePath, err error)
+	Remove(ipath NodePath) (err error)
+	FLoop(height int, cb func(height int, node NodeInfo) bool) (npath NodePath)
+	FLoopGroup(groupname string, cb func(height int, node NodeInfo) bool) (breakoutPath NodePath)
 	String() string
 }
 type nodeTree struct {
-	node *Node
+	node       *Node
+	lastAdd    NodePath
+	lastRemove NodePath
 }
 
 func NewNodeTree() NodeTree {
@@ -187,14 +250,36 @@ func (n *nodeTree) SetNode(node *Node) {
 func (n *nodeTree) GetNode() *Node {
 	return n.node
 }
-func (n *nodeTree) Remove(address string) {
-
+func (n *nodeTree) GetLastAdd() NodePath {
+	return n.lastAdd
 }
-func (n *nodeTree) FLoop(height int, cb func(height int, node NodeInfo) bool) (breakoutNode NodeInfo) {
+func (n *nodeTree) GetLastRemove() NodePath {
+	return n.lastRemove
+}
+func (n *nodeTree) Remove(ipath NodePath) (err error) {
+	n.lastRemove = ipath
+	return
+}
+func (n *nodeTree) FLoop(height int, cb func(height int, node NodeInfo) bool) (breakoutPath NodePath) {
 	if n.node == nil {
 		return ""
 	}
-	breakoutNode = n.node.FLoop(height, cb)
+	breakoutPath = n.node.FLoop(height, cb)
+	return
+}
+func (n *nodeTree) FLoopGroup(groupname string, cb func(height int, node NodeInfo) bool) (breakoutPath NodePath) {
+	if n.node == nil {
+		return ""
+	}
+	target := n.node.FLoopForNode(0, func(height int, node NodeInfo) bool {
+		if node.Name == groupname {
+			return true
+		}
+		return false
+	})
+	if target != nil {
+		breakoutPath = target.FLoop(0, cb)
+	}
 	return
 }
 func (n *nodeTree) String() string {
@@ -210,33 +295,75 @@ func (n *nodeTree) String() string {
 	})
 	return info
 }
-func (n *nodeTree) Add(address string) NodeInfo {
-	if n.node == nil {
-		n.node = NewNode(address)
-		return n.node.Info
-	} else {
-		return n.node.Add(address)
+func (n *nodeTree) Add(ipath NodePath) (npath NodePath, err error) {
+	n.lastAdd = ipath
+	info, ok := ipath.GetNodeInfo()
+	if !ok {
+		err = errors.New("Invalid NodePath")
+		return
 	}
+	if n.node == nil {
+		n.node = NewNode(info)
+		return NewNodePath(n.node.Info), nil
+	}
+	lpath, ok := ipath.GetLeaderPath()
+	if ok {
+		linfo, ok := lpath.GetNodeInfo()
+		if ok {
+			npath, ok = n.node.AddAt(info, linfo.Name)
+			if !ok {
+				err = errors.New("Your Leader Is Not Exsit")
+			}
+		}
+		return
+	}
+	npath = n.node.Add(info)
+	return
 }
 
-func (n *nodeTree) Search(address string) (newInfo NodeInfo, ok bool) {
-	newInfo = NodeInfo(address)
+func (n *nodeTree) searchWith(withWhatCall func(NodeInfo) bool) (newPath NodePath, ok bool) {
 	ok = false
 	if n.node == nil {
 		return
 	}
-	searchedNode := n.FLoop(0, func(height int, node NodeInfo) bool {
-		addr, err := node.GetAddress()
-		if err == nil && addr == address {
+	searchedPath := n.FLoop(0, func(height int, node NodeInfo) bool {
+		return withWhatCall(node)
+	})
+	if searchedPath != "" {
+		newPath = searchedPath
+		ok = true
+		return
+	}
+	return
+}
+
+func (n *nodeTree) Search(info NodeInfo) (newPath NodePath, ok bool) {
+	newPath, ok = n.searchWith(func(selected NodeInfo) bool {
+		if selected == info {
 			return true
 		} else {
 			return false
 		}
 	})
-	if searchedNode != "" {
-		newInfo = searchedNode
-		ok = true
-		return
-	}
+	return
+}
+func (n *nodeTree) SearchWithName(name string) (newPath NodePath, ok bool) {
+	newPath, ok = n.searchWith(func(selected NodeInfo) bool {
+		if selected.Name == name {
+			return true
+		} else {
+			return false
+		}
+	})
+	return
+}
+func (n *nodeTree) SearchWithAddr(addr string) (newPath NodePath, ok bool) {
+	newPath, ok = n.searchWith(func(selected NodeInfo) bool {
+		if selected.GetAddress() == addr {
+			return true
+		} else {
+			return false
+		}
+	})
 	return
 }
