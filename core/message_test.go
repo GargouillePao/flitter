@@ -1,12 +1,15 @@
 package core
 
 import (
+	"bytes"
 	utils "github.com/gargous/flitter/utils"
+	"github.com/kr/pretty"
 	"testing"
 	"time"
 )
 
 func Test_MessageInfo(t *testing.T) {
+
 	t.Log(utils.Norf("Start MessageInfo"))
 	info := NewMessageInfo()
 	info.SetAcion(MA_Refer)
@@ -66,23 +69,26 @@ func Test_Message_Serialize(t *testing.T) {
 	info.SetAcion(MA_Refer)
 	info.SetState(MS_Probe)
 	content := []byte("Hello")
-	msg := NewMessage(info, content)
+	msg := NewMessage(info)
+	msg.AppendContent(content)
 	serializer := NewSerializer()
 	_, buf, _ := serializer.Encode(info)
-	buf = append(buf, msg.GetContent()...)
-
-	info = NewMessageInfo()
-	n, err := serializer.Decode(info, buf)
+	buf = append(buf, bytes.Join(msg.GetContents(), []byte("\n"))...)
+	ninfo := NewMessageInfo()
+	nmsg := NewMessage(ninfo)
+	n, err := serializer.Decode(ninfo, buf)
 	if err != nil {
 		t.Log(utils.Errf("%v", err))
 		t.Fail()
 	}
 	ncontent := buf[n:]
-	if string(ncontent) != string(content) {
-		t.Logf(utils.Errf("Err and now info is:%s.%v.%v", ncontent, n, info.Size()))
+	nmsg.SetContents(bytes.Split(ncontent, []byte("\n")))
+	diff := pretty.Diff(nmsg, msg)
+	if len(diff) > 0 {
+		t.Logf(utils.Errf("Err and now info is:%v.%v.%v", nmsg, msg, diff))
 		t.Fail()
 	} else {
-		t.Logf(utils.Infof("msg now is:%s", ncontent))
+		t.Logf(utils.Infof("msg now is:%v", nmsg))
 	}
 	t.Log(utils.Norf("End MsgInfo Serialize"))
 }

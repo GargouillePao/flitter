@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gargous/flitter/core"
-	"github.com/gargous/flitter/data"
+	saver "github.com/gargous/flitter/save"
 	"github.com/gargous/flitter/utils"
 	socketio "github.com/googollee/go-socket.io"
 	"strings"
@@ -17,17 +17,19 @@ type NameService interface {
 type namesrv struct {
 	referee       Referee
 	nameTree      core.NodeTree
-	nameTreeSaver data.NodeTreeSaver
+	nameTreeSaver saver.NodeTreeSaver
 	mutex         sync.Mutex
+	bussyness     bool
 	baseService
 }
 
 func NewNameService() NameService {
 	srv := &namesrv{
-		nameTree: core.NewNodeTree(),
+		nameTree:  core.NewNodeTree(),
+		bussyness: false,
 	}
 	srv.looper = core.NewMessageLooper(__LooperSize)
-	srv.nameTreeSaver = data.NewNodeTreeSaver(srv.nameTree)
+	srv.nameTreeSaver = saver.NewNodeTreeSaver(srv.nameTree)
 	return srv
 }
 
@@ -42,7 +44,7 @@ func (n *namesrv) SearchNodeInfo(npath core.NodePath) (opath core.NodePath, err 
 	defer n.mutex.Unlock()
 	if n.nameTree == nil {
 		n.nameTree = core.NewNodeTree()
-		n.nameTreeSaver = data.NewNodeTreeSaver(n.nameTree)
+		n.nameTreeSaver = saver.NewNodeTreeSaver(n.nameTree)
 		n.nameTreeSaver.Load()
 	}
 	info, ok := npath.GetNodeInfo()
@@ -56,9 +58,9 @@ func (n *namesrv) SearchNodeInfo(npath core.NodePath) (opath core.NodePath, err 
 		if err != nil {
 			return
 		}
-		//n.nameTreeSaver.SaveLastItem(data.SA_Add)
+		//n.nameTreeSaver.SaveLastItem(saver.SA_Add)
 	}
-	utils.Logf(utils.Norf, "Search\n%v", n.nameTree)
+	utils.Logf(utils.Norf, "Search\n%v,%v", opath, n.nameTree)
 	return
 }
 func (n *namesrv) SearchNodeInfoWithGroupName(groupname string, index int) core.NodePath {
@@ -76,27 +78,38 @@ func (n *namesrv) SearchNodeInfoWithGroupName(groupname string, index int) core.
 	return targetAddress
 }
 func (n *namesrv) HandleClients() {
-	n.referee.AddClientHandler(func(so socketio.Socket) {
-		so.On("refer address", func(name string, index int) {
-			addr := n.SearchNodeInfoWithGroupName(name, index)
-			so.Emit("refer address", addr)
-		})
+	n.referee.TrickClient("flitter refer address", func(so socketio.Socket) interface{} {
+		return func(name string, index int) {
+			if !n.bussyness {
+				addr := n.SearchNodeInfoWithGroupName(name, index)
+				so.Emit("flitter refer address", addr)
+			} else {
+				so.Emit("flitter refer address", __Client_Reply_bussy)
+			}
+		}
 	})
 }
 func (n *namesrv) HandleMessages() {
-	n.looper.AddHandler(0, core.MA_Refer, func(msg core.Message) error {
+	n.looper.AddHandler(0, core.MA_Refer, func(msg core.Message) (err error) {
 		_, state, _ := msg.GetInfo().Info()
 		switch state {
 		case core.MS_Ask:
-			nodeinfo, err := n.SearchNodeInfo(core.NodePath(msg.GetContent()))
-			if err != nil {
-				return err
-			}
-			msg.SetContent([]byte(nodeinfo))
-			msg.GetInfo().SetState(core.MS_Succeed)
-			err = n.referee.SendToWroker(msg, nodeinfo)
-			if err != nil {
-				return err
+			if !n.bussyness {
+				content, ok := msg.GetContent(0)
+				if !ok {
+					return
+				}
+				nodeinfo, err := n.SearchNodeInfo(core.NodePath(content))
+				if err != nil {
+					return err
+				}
+				msg.ClearContent()
+				msg.AppendContent([]byte(nodeinfo))
+				msg.GetInfo().SetState(core.MS_Succeed)
+				err = n.referee.SendToWroker(msg, nodeinfo)
+				if err != nil {
+					return err
+				}
 			}
 		case core.MS_Error:
 			utils.ErrIn(errors.New(msg.GetInfo().String()), "[node server]")

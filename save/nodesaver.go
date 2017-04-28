@@ -1,4 +1,4 @@
-package data
+package save
 
 import (
 	"fmt"
@@ -6,32 +6,6 @@ import (
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
-
-var __mongo_session *mgo.Session
-var __mongo_db *mgo.Database
-
-type SaveAction uint8
-
-const (
-	_ SaveAction = iota
-	SA_Add
-	SA_Remove
-	SA_Clean
-)
-
-func OpenMongo(addr string, db string) (err error) {
-	__mongo_session, err = mgo.Dial(addr)
-	if err != nil {
-		return
-	}
-	__mongo_session.SetMode(mgo.Monotonic, true)
-	__mongo_db = __mongo_session.DB(db)
-	return
-}
-
-func CloseMongo() {
-	__mongo_session.Close()
-}
 
 type NodeTreeSaver interface {
 	Load() error

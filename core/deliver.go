@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	zmq "github.com/pebbe/zmq4"
 )
@@ -209,32 +210,47 @@ func (d *deliverer) Close() {
 	}
 }
 
-func (d *deliverer) Send(msg Message) error {
-	var err error
+func (d *deliverer) Send(msg Message) (err error) {
 	_, buf, err := NewSerializer().Encode(msg.GetInfo())
 	if err != nil {
 		return err
 	}
-	buf = append(buf, msg.GetContent()...)
-	_, err = d.socket.SendBytes(buf, 0)
-	if err != nil {
-		return err
+	if msg.GetContents() == nil || len(msg.GetContents()) == 0 {
+		_, err = d.socket.SendBytes(buf, 0)
+	} else {
+		_, err = d.socket.SendBytes(buf, zmq.SNDMORE)
+		if err != nil {
+			return
+		}
+		for index, content := range msg.GetContents() {
+			if index == len(msg.GetContents())-1 {
+				_, err = d.socket.SendBytes(content, 0)
+			} else {
+				_, err = d.socket.SendBytes(content, zmq.SNDMORE)
+			}
+			if err != nil {
+				return
+			}
+		}
 	}
-	return err
+	return
 }
-func (d *deliverer) Recv() (Message, error) {
-	var err error
-	buf, err := d.socket.RecvBytes(0)
+func (d *deliverer) Recv() (msg Message, err error) {
+	bufs, err := d.socket.RecvMessageBytes(0)
 	if err != nil {
-		return nil, err
+		return
+	}
+	if len(bufs) < 1 {
+		err = errors.New("No Info In This Message")
 	}
 	msgInfo := NewMessageInfo()
-	size, err := NewSerializer().Decode(msgInfo, buf)
+	_, err = NewSerializer().Decode(msgInfo, bufs[0])
 	if err != nil {
-		return nil, err
+		return
 	}
-	msg := NewMessage(msgInfo, buf[size:])
-	return msg, err
+	msg = NewMessage(msgInfo)
+	msg.SetContents(bufs[1:])
+	return
 }
 func (d deliverer) String() string {
 	nowcstr := ""

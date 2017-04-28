@@ -12,6 +12,7 @@ type Worker interface {
 	PublishToWorker(msg core.Message) error
 	SubscribeWorker(npath core.NodePath) error
 	Server
+	DataSet
 }
 
 type workersrv struct {
@@ -23,6 +24,7 @@ type workersrv struct {
 	publisher  core.Publisher
 	wg         sync.WaitGroup
 	baseServer
+	dataSet
 }
 
 func NewWorker(npath core.NodePath) (worker Worker, err error) {
@@ -117,7 +119,13 @@ func (w *workersrv) SubscribeWorker(npath core.NodePath) (err error) {
 }
 func (w *workersrv) Start() (err error) {
 	err = w.recverR2W.Bind()
+	if err != nil {
+		return
+	}
 	err = w.recverW2W.Bind()
+	if err != nil {
+		return
+	}
 	err = w.publisher.Bind()
 	if err != nil {
 		return
@@ -177,6 +185,7 @@ func (w *workersrv) Start() (err error) {
 	w.subscriber.SetSubscribe("")
 	err = w.InitClientHandler()
 	if err != nil {
+		utils.ErrIn(err)
 		return
 	}
 	w.wg.Wait()

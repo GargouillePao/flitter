@@ -159,7 +159,12 @@ func (n *Node) AddAt(info NodeInfo, parentName string) (npath NodePath, ok bool)
 	if tnode != nil {
 		ok = true
 		npath = NewNodePath(n.Info)
-		npath.AppendPath(tnode.Add(info))
+		outpath := tnode.Add(info)
+		if n == tnode {
+			npath = outpath
+		} else {
+			npath.AppendPath(outpath)
+		}
 		return
 	}
 	return

@@ -86,7 +86,6 @@ func Test_NodeTree(t *testing.T) {
 		t.Log(utils.Infof("Add scenex %v\ntree:%v", npath, tree))
 	} else {
 		t.Fatal(utils.Errf("Add scenex %v\ntree:%v\nerr:%v", npath, tree, err))
-
 	}
 	t.Log(utils.Norf("End Node Tree"))
 }

@@ -50,13 +50,15 @@ func TestMessageLooper(t *testing.T) {
 			times++
 			//fmt.Println(utils.Infof("%v", msg))
 			if times == 3 {
-				msg := NewMessage(NewMessageInfo(), []byte("Hello"))
+				msg := NewMessage(NewMessageInfo())
+				msg.AppendContent([]byte("Hello"))
 				msg.GetInfo().SetAcion(MA_Refer)
 				msg.GetInfo().SetState(MS_Probe)
 				looper.Push(msg)
 			}
 			if times == 6 {
-				msg := NewMessage(NewMessageInfo(), []byte("World"))
+				msg := NewMessage(NewMessageInfo())
+				msg.AppendContent([]byte("World"))
 				msg.GetInfo().SetAcion(MA_Refer)
 				msg.GetInfo().SetState(MS_Probe)
 				looper.Push(msg)
@@ -65,7 +67,8 @@ func TestMessageLooper(t *testing.T) {
 		return err
 	})
 	looper.SetInterval(1000, func(_t time.Time) error {
-		msg := NewMessage(NewMessageInfo(), []byte(_t.String()))
+		msg := NewMessage(NewMessageInfo())
+		msg.AppendContent([]byte(_t.String()))
 		msg.GetInfo().SetAcion(MA_Heartbeat)
 		msg.GetInfo().SetState(MS_Probe)
 		looper.Push(msg)

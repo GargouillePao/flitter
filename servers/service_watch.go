@@ -47,20 +47,31 @@ func (w *watchsrv) HandleMessages() {
 		switch state {
 		case core.MS_Probe:
 			msg.GetInfo().SetState(core.MS_Ask)
-			msg.SetContent([]byte(w.worker.GetPath()))
+			msg.AppendContent([]byte(w.worker.GetPath()))
 			err = w.worker.SendToReferee(msg, w.getRefereeServer())
 			if err != nil {
 				return err
 			}
 		case core.MS_Succeed:
-			npath := core.NodePath(msg.GetContent())
-			_, ok := npath.GetLeaderPath()
+			content, ok := msg.GetContent(0)
+			if !ok {
+				err = errors.New("No Content")
+				return
+			}
+			npath := core.NodePath(content)
+			w.worker.Set("path", content)
+			_, ok = npath.GetLeaderPath()
 			if ok {
+				info, ok := npath.GetNodeInfo()
+				if ok {
+					w.worker.Set("name", []byte(info.Name))
+				}
 				msg.GetInfo().SetAcion(core.MA_Init)
 				msg.GetInfo().SetState(core.MS_Probe)
 				w.looper.Push(msg)
 			}
 		case core.MS_Failed:
+			msg.ClearContent()
 			utils.Logf(utils.Warningf, "%v[watch server failed]", msg.GetInfo())
 			msg.GetInfo().SetTime(time.Now())
 			msg.GetInfo().SetState(core.MS_Probe)
@@ -95,7 +106,7 @@ func (w *watchsrv) Start() {
 	info.SetAcion(core.MA_Refer)
 	info.SetState(core.MS_Probe)
 	info.SetTime(time.Now())
-	w.looper.Push(core.NewMessage(info, []byte("Hello")))
+	w.looper.Push(core.NewMessage(info))
 	w.looper.Loop()
 }
 func (w *watchsrv) Term() {

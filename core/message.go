@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	utils "github.com/gargous/flitter/utils"
@@ -24,6 +25,7 @@ const (
 	MA_Crash
 	MA_Vote
 	MA_Upgrade
+	MA_Update
 	MA_Term
 	MA_User_Request
 )
@@ -57,6 +59,8 @@ func (m MessageAction) String() (str string) {
 		return "MA_Crash"
 	case MA_Vote:
 		return "MA_Vote"
+	case MA_Update:
+		return "MA_Update"
 	case MA_Upgrade:
 		return "MA_Upgrade"
 	case MA_User_Request:
@@ -110,29 +114,35 @@ type Message interface {
 	GetInfo() (info MessageInfo)
 	GetVisitTimes() int
 	Visit()
-	SetContent(buf []byte)
-	GetContent() (buf []byte)
+	ClearContent()
+	AppendContent(buf []byte)
+	GetContent(index int) (buf []byte, ok bool)
+	SetContents(buf [][]byte)
+	GetContents() (buf [][]byte)
 	Copy() Message
 	String() string
 }
 
-func NewMessage(info MessageInfo, content []byte) Message {
-	msg := &message{info: info, content: content, visit: 0}
+func NewMessage(info MessageInfo) Message {
+	msg := &message{
+		info:     info,
+		contents: make([][]byte, 0),
+		visit:    0}
 	return msg
 }
 
 /*(NULL)*/
 type message struct {
-	info    MessageInfo
-	visit   int
-	content []byte
+	info     MessageInfo
+	visit    int
+	contents [][]byte
 }
 
 func (m *message) Copy() Message {
 	msg := &message{
-		info:    m.info.Copy(),
-		content: m.GetContent(),
-		visit:   m.visit,
+		info:     m.info.Copy(),
+		contents: m.GetContents(),
+		visit:    m.visit,
 	}
 	return msg
 }
@@ -146,17 +156,41 @@ func (m *message) GetInfo() (info MessageInfo) {
 	info = m.info
 	return
 }
-func (m *message) SetContent(buf []byte) {
-	m.content = buf
+func (m *message) AppendContent(buf []byte) {
+	if m.contents == nil {
+		m.contents = make([][]byte, 0)
+	}
+	m.contents = append(m.contents, buf)
 	return
 }
-func (m *message) GetContent() (buf []byte) {
-	buf = m.content
+func (m *message) ClearContent() {
+	if m.contents == nil {
+		m.contents = make([][]byte, 0)
+	}
+	m.contents = m.contents[:0]
+	return
+}
+func (m *message) GetContent(index int) (buf []byte, ok bool) {
+	if index >= len(m.contents) {
+		ok = false
+		return
+	}
+	ok = true
+	buf = m.contents[index]
+	return
+}
+func (m *message) SetContents(bufs [][]byte) {
+	m.contents = bufs
+	return
+}
+func (m *message) GetContents() (bufs [][]byte) {
+	bufs = m.contents
 	return
 }
 func (m *message) String() string {
 	infostr := strings.Join(strings.Split(fmt.Sprintf("%v", m.info), "\n"), "\n\t")
-	str := fmt.Sprintf("Message[\n\tinfo:%s\n\tvisist:%d\n\tcontent:%s\n]", infostr, m.visit, m.content)
+	contents := bytes.Join(m.contents, []byte("\n\t"))
+	str := fmt.Sprintf("Message[\n\tinfo:%s\n\tvisist:%d\n\tcontents:%s\n]", infostr, m.visit, contents[:])
 	return str
 }
 

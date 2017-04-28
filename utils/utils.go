@@ -3,6 +3,7 @@ package utils
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"io"
@@ -136,7 +137,6 @@ func Ecode(data interface{}) ([]byte, error) {
 	}
 	return buffer.Bytes(), nil
 }
-
 func ByteArrayToUInt16(buf []byte) (out uint16, err error) {
 	bufLen := len(buf)
 	if bufLen < 2 {
@@ -173,5 +173,24 @@ func ByteArrayToUInt64(buf []byte) (out uint64, err error) {
 	out += uint64(buf[5]) << (2 * 8)
 	out += uint64(buf[6]) << 8
 	out += uint64(buf[7])
+	return
+}
+func ByteArrayToFloat32(buf []byte) (out float32, err error) {
+	buffer := bytes.NewReader(buf)
+	err = binary.Read(buffer, binary.BigEndian, out)
+	return
+}
+
+func ByteArrayToFloat32Array(buf []byte) (out []float32, err error) {
+	buffer := bytes.NewBuffer(buf)
+	decoder := gob.NewDecoder(buffer)
+	err = decoder.Decode(&out)
+	return
+}
+func GobEcode(v interface{}) (out []byte, err error) {
+	buf := bytes.NewBuffer(nil)
+	ecoder := gob.NewEncoder(buf)
+	err = ecoder.Encode(v)
+	out = buf.Bytes()
 	return
 }

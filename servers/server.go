@@ -10,58 +10,87 @@ import (
 )
 
 type baseServer struct {
+	dataSet
 	path           core.NodePath
 	srvices        map[ServiceType]Service
 	clientSrv      *socketio.Server
-	clientHandlers []func(so socketio.Socket)
+	clientHandlers map[string](func(so socketio.Socket) interface{})
 }
+
 type Server interface {
 	Start() error
 	InitClientHandler() error
-	AddClientHandler(handler func(so socketio.Socket))
+	TrickClient(event string, handler func(so socketio.Socket) interface{})
 	ConfigService(st ServiceType, srvice Service)
 	SendService(st ServiceType, msg core.Message) error
 	GetPath() core.NodePath
+	GetClientSocket() *socketio.Server
 }
 
-func (b *baseServer) AddClientHandler(handler func(so socketio.Socket)) {
-	b.clientHandlers = append(b.clientHandlers, handler)
+func (b *baseServer) GetClientSocket() *socketio.Server {
+	return b.clientSrv
+}
+
+func (b *baseServer) TrickClient(event string, handler func(so socketio.Socket) interface{}) {
+	if b.clientHandlers == nil {
+		b.clientHandlers = make(map[string]func(so socketio.Socket) interface{})
+	}
+	b.clientHandlers[event] = handler
 }
 
 func (b *baseServer) InitClientHandler() (err error) {
-	if b.clientHandlers != nil {
-		b.clientHandlers = make([]func(so socketio.Socket), 0)
+	if b.clientHandlers == nil {
+		b.clientHandlers = make(map[string]func(so socketio.Socket) interface{})
 	}
 	b.clientSrv, err = socketio.NewServer(nil)
 	if err != nil {
+		utils.ErrIn(err, "New SocketIO")
 		return
 	}
 	err = b.clientSrv.On("error", func(so socketio.Socket, err error) {
 		utils.ErrIn(err, so.Id(), "Client")
 	})
 	if err != nil {
+		utils.ErrIn(err, "Client On Error")
 		return
 	}
 
 	err = b.clientSrv.On("connection", func(so socketio.Socket) {
+		err = so.Join("flitter")
+		if err != nil {
+			utils.ErrIn(err, "Client When Join Flitter")
+			return
+		}
 		utils.Logf(utils.Infof, "Client Connected")
-		so.On("disconnection", func() {
+		err = so.On("disconnection", func() {
 			utils.Logf(utils.Warningf, "Client Disconnected")
 		})
-		for _, handler := range b.clientHandlers {
-			handler(so)
+		if err != nil {
+			utils.ErrIn(err, "Client On Disconnection")
+			return
+		}
+		for event, handler := range b.clientHandlers {
+			cb := handler(so)
+			err = so.On(event, cb)
+			if err != nil {
+				utils.ErrIn(err, "Client On "+event)
+				return
+			}
 		}
 	})
 	if err != nil {
+		utils.ErrIn(err, "Client On Connect")
 		return
 	}
 	http.Handle("/socket.io/", b.clientSrv)
 
 	info, err := _ParseAddress(b.path, SRT_Undefine, SRT_Client)
 	if err != nil {
+		utils.ErrIn(err, "ParseAddress")
 		return
 	}
 	err = http.ListenAndServe(info.GetAddress(), nil)
+	utils.ErrIn(err, "Listen HTTP")
 	return
 }
 func (b *baseServer) ConfigService(st ServiceType, srvice Service) {

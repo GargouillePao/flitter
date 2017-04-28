@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"github.com/gargous/flitter/core"
 	"github.com/gargous/flitter/servers"
 	"github.com/gargous/flitter/utils"
 	socketio "github.com/googollee/go-socket.io"
+	"time"
 )
 
 const (
@@ -44,12 +46,40 @@ func handleWorker(npath string) {
 	server.ConfigService(servers.ST_HeartBeat, servers.NewHeartbeatService())
 	scencer := servers.NewScenceService()
 	server.ConfigService(servers.ST_Scence, scencer)
-	server.TrickClient("data", func(so socketio.Socket) interface{} {
-		return func(data string) {
-			utils.Logf(utils.Infof, "Client Say :%s", data)
-			so.Emit("data", "Reply Your "+data)
+	server.TrickClient("position", func(so socketio.Socket) interface{} {
+		return func(name string, x float32, y float32) {
+			posbyte, err := utils.GobEcode([]float32{x, y})
+			if err != nil {
+				utils.ErrIn(errors.New("Ecode Client Data With k=Postion Failed"))
+				return
+			}
+			err = scencer.SetClientData(name, "position", posbyte)
+			if err != nil {
+				utils.ErrIn(errors.New("Set Client Data With k=Postion Failed"))
+				return
+			}
+			//utils.Logf(utils.Infof, "My Clients:\n%v", scencer.GetClientData(name))
 		}
 	})
+	go func() {
+		for {
+			time.Sleep(time.Second)
+			if scencer.IsAccess() {
+				positionsBuf := scencer.GetClientData("", "position")
+				positions := make(map[string][]float32)
+				for name, v := range positionsBuf {
+					position, err := utils.ByteArrayToFloat32Array(v)
+					if err == nil {
+						positions[name] = position
+					} else {
+						utils.ErrIn(err)
+					}
+				}
+				utils.Logf(utils.Norf, "positions:\n%v", positions)
+				server.GetClientSocket().BroadcastTo("flitter", "position", positions)
+			}
+		}
+	}()
 	err = server.Start()
 	utils.ErrQuit(err, "Worker")
 	utils.Logf(utils.Norf, "End Worker")

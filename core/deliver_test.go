@@ -19,7 +19,8 @@ func Test_Sender(t *testing.T) {
 	if err != nil {
 		t.Fatal(utils.Errf("connect err:%v", err))
 	}
-	msg := NewMessage(NewMessageInfo(), []byte("Hello"))
+	msg := NewMessage(NewMessageInfo())
+	msg.AppendContent([]byte("Hello"))
 	err = sender.Send(msg)
 	if err != nil {
 		t.Fatal(utils.Errf("send err:%v", err))

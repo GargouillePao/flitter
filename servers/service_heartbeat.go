@@ -34,7 +34,7 @@ func (h *heartbeatsrv) HandleMessages() {
 			info := core.NewMessageInfo()
 			info.SetAcion(core.MA_Heartbeat)
 			info.SetState(core.MS_Succeed)
-			err := h.worker.PublishToWorker(core.NewMessage(info, []byte("")))
+			err := h.worker.PublishToWorker(core.NewMessage(info))
 			if err != nil {
 				utils.ErrIn(err, "[publish at heartbeat to Children]")
 			}
@@ -45,30 +45,43 @@ func (h *heartbeatsrv) HandleMessages() {
 		_, state, _ := msg.GetInfo().Info()
 		switch state {
 		case core.MS_Probe:
-			leader, ok := core.NodePath(msg.GetContent()).GetLeaderPath()
+			content, ok := msg.GetContent(0)
+			if !ok {
+				return
+			}
+			leader, ok := core.NodePath(content).GetLeaderPath()
 			if !ok {
 				msgInfo := msg.GetInfo()
 				msgInfo.SetState(core.MS_Succeed)
-				h.looper.Push(core.NewMessage(msgInfo, []byte("")))
+				h.looper.Push(core.NewMessage(msgInfo))
 			} else {
 				msg.GetInfo().SetState(core.MS_Ask)
-				msg.SetContent([]byte(leader))
+				msg.AppendContent([]byte(leader))
 				h.looper.Push(msg)
 			}
 
 		case core.MS_Ask:
-			err = h.worker.SubscribeWorker(core.NodePath(msg.GetContent()))
+			content, ok := msg.GetContent(0)
+			if !ok {
+				return
+			}
+			lpath, ok := core.NodePath(content).GetLeaderPath()
+			if !ok {
+				err = errors.New("No Leader")
+				return
+			}
+			err = h.worker.SubscribeWorker(lpath)
 			if err != nil {
 				return
 			}
 			msgInfo := msg.GetInfo()
 			msgInfo.SetState(core.MS_Succeed)
-			h.looper.Push(core.NewMessage(msgInfo, []byte("")))
+			h.looper.Push(core.NewMessage(msgInfo))
 
 			msgInfo = core.NewMessageInfo()
 			msgInfo.SetAcion(core.MA_Heartbeat)
 			msgInfo.SetState(core.MS_Probe)
-			h.looper.Push(core.NewMessage(msgInfo, []byte("")))
+			h.looper.Push(core.NewMessage(msgInfo))
 
 		case core.MS_Succeed:
 			h.worker.SendService(ST_Watch, msg)

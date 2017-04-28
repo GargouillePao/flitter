@@ -1,4 +1,4 @@
-package data
+package save
 
 import (
 	"github.com/gargous/flitter/core"

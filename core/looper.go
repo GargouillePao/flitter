@@ -52,10 +52,10 @@ func (m *messageLooper) gatherError(handler MessageHandler, msg Message) {
 	err := handler(msg)
 	if err != nil {
 		if msg == nil {
-			msg = NewMessage(NewMessageInfo(), []byte(""))
+			msg = NewMessage(NewMessageInfo())
 		}
 		msg.GetInfo().SetState(MS_Error)
-		msg.SetContent([]byte(err.Error()))
+		msg.AppendContent([]byte(err.Error()))
 		m.Push(msg)
 	}
 }
@@ -149,7 +149,7 @@ func (m *messageLooper) Loop() {
 func (m *messageLooper) Term() {
 	info := NewMessageInfo()
 	info.SetAcion(MA_Term)
-	m.Push(NewMessage(info, []byte("")))
+	m.Push(NewMessage(info))
 }
 
 func (m *messageLooper) term() {
