@@ -54,7 +54,6 @@ func (b *baseServer) InitClientHandler() (err error) {
 		utils.ErrIn(err, "Client On Error")
 		return
 	}
-
 	err = b.clientSrv.On("connection", func(so socketio.Socket) {
 		err = so.Join("flitter")
 		if err != nil {

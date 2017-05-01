@@ -187,10 +187,3 @@ func ByteArrayToFloat32Array(buf []byte) (out []float32, err error) {
 	err = decoder.Decode(&out)
 	return
 }
-func GobEcode(v interface{}) (out []byte, err error) {
-	buf := bytes.NewBuffer(nil)
-	ecoder := gob.NewEncoder(buf)
-	err = ecoder.Encode(v)
-	out = buf.Bytes()
-	return
-}

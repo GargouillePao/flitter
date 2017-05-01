@@ -58,18 +58,18 @@ func (w *watchsrv) HandleMessages() {
 				err = errors.New("No Content")
 				return
 			}
-			npath := core.NodePath(content)
-			w.worker.Set("path", content)
-			_, ok = npath.GetLeaderPath()
-			if ok {
-				info, ok := npath.GetNodeInfo()
-				if ok {
-					w.worker.Set("name", []byte(info.Name))
-				}
-				msg.GetInfo().SetAcion(core.MA_Init)
-				msg.GetInfo().SetState(core.MS_Probe)
-				w.looper.Push(msg)
+
+			var pathData DataItem
+			err := pathData.Parse(content)
+			if err != nil {
+				return err
 			}
+
+			w.worker.Set("path", pathData)
+
+			msg.GetInfo().SetAcion(core.MA_Init)
+			msg.GetInfo().SetState(core.MS_Probe)
+			w.looper.Push(msg)
 		case core.MS_Failed:
 			msg.ClearContent()
 			utils.Logf(utils.Warningf, "%v[watch server failed]", msg.GetInfo())
@@ -77,7 +77,7 @@ func (w *watchsrv) HandleMessages() {
 			msg.GetInfo().SetState(core.MS_Probe)
 			w.looper.Push(msg)
 		case core.MS_Error:
-			utils.ErrIn(errors.New(msg.GetInfo().String()), "watch server")
+			utils.ErrIn(errors.New(msg.String()), "watch server")
 		}
 		return
 	})
