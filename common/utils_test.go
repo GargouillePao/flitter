@@ -1,8 +1,7 @@
-package utils
+package common
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -11,19 +10,17 @@ import (
 
 func Test_ErrIn(t *testing.T) {
 	t.Log(Norf("ErrIn Start"))
-	filename := fmt.Sprintf("%d", time.Now().UnixNano()) + ".log"
-	fd, err := os.Create(filename)
+	filename, err := InitLog(true, "../logs")
 	if err != nil {
-		t.Fatal(Errf("Create File %v", err))
+		t.Fatal(Errf("Init Log %v", err))
 	}
-	SetLogAddress(fd)
 	ErrIn(errors.New("Err1"))
 	ErrIn(errors.New("Err2"))
 	ErrIn(errors.New("Err3"))
 	ErrIn(errors.New("Err4"))
 	ErrIn(errors.New("Err5"))
-	time.Sleep(time.Second * 2)
-	fd, err = os.Open(filename)
+	time.Sleep(time.Second * 1)
+	fd, err := os.Open(filename)
 	if err != nil {
 		t.Fatal(Errf("Open File %v", err))
 	}
@@ -33,10 +30,18 @@ func Test_ErrIn(t *testing.T) {
 		t.Fatal(Errf("Read File %v", err))
 	}
 	bufstr := strings.Trim(string(buf[:n]), " ")
-	if bufstr == "Error(QAQ):Err1\nError(QAQ):Err2\nError(QAQ):Err3\nError(QAQ):Err4\nError(QAQ):Err5\n" {
+	shouldbe := `Error(QAQ):[at utils_test.go 17]Err1
+Error(QAQ):[at utils_test.go 18]Err2
+Error(QAQ):[at utils_test.go 19]Err3
+Error(QAQ):[at utils_test.go 20]Err4
+Error(QAQ):[at utils_test.go 21]Err5
+`
+	os.Remove(filename)
+	if bufstr == shouldbe {
 		t.Log(Infof("Succeed %s", bufstr))
 	} else {
-		t.Fatal(Errf("Failed %s", bufstr))
+		t.Fatal(Errf("Failed \nNow\n%s\nShould\n%s", bufstr, shouldbe))
 	}
+
 	t.Log(Norf("ErrIn End"))
 }

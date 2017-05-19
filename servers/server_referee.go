@@ -1,8 +1,9 @@
 package servers
 
 import (
+	"errors"
+	"github.com/gargous/flitter/common"
 	"github.com/gargous/flitter/core"
-	"github.com/gargous/flitter/utils"
 	"sync"
 )
 
@@ -17,7 +18,7 @@ type refereesrv struct {
 	baseServer
 }
 
-func NewReferee(path core.NodePath) (referee Referee, err error) {
+func NewReferee(npath core.NodePath) (referee Referee, err error) {
 	senderR2W, err := core.NewSender()
 	if err != nil {
 		return
@@ -25,9 +26,9 @@ func NewReferee(path core.NodePath) (referee Referee, err error) {
 	_referee := &refereesrv{
 		senderR2W: senderR2W,
 	}
-	_referee.path = path
+	_referee.Set("path", common.DataItem{Data: []byte(npath)})
 	_referee.srvices = make(map[ServiceType]Service)
-	info, err := _ParseAddress(path, SRT_Worker, SRT_Referee)
+	info, err := _ParseAddress(npath, SRT_Worker, SRT_Referee)
 	if err != nil {
 		return
 	}
@@ -61,7 +62,7 @@ func (r *refereesrv) Start() (err error) {
 		for {
 			msg, err := r.recverW2R.Recv()
 			if err != nil {
-				utils.ErrIn(err, "Receive From Worker", "At Referee_", string(r.path))
+				common.ErrIn(err, "Receive From Worker")
 				continue
 			}
 			if msg != nil {
@@ -72,21 +73,37 @@ func (r *refereesrv) Start() (err error) {
 		}
 	}()
 	r.wg.Add(len(r.srvices))
+	index := 0
 	for _, srvice := range r.srvices {
-		utils.Logf(utils.Norf, "%v", srvice)
 		func(srvice Service) {
 			go func() {
 				defer r.wg.Done()
-				srvice.Init(r)
+				err = srvice.Init(r)
+				if err != nil {
+					return
+				}
+				common.Logf(common.Norf, "Initiate %v", srvice)
+				index++
+				if index >= len(r.srvices) {
+					dpath, ok := r.Get("path")
+					if !ok {
+						err = errors.New("Path Not Config")
+						return
+					}
+					common.Logf(common.Norf, "Referee Started At %v\n%v", core.NodePath(dpath.Data), r)
+				}
 				srvice.Start()
-				utils.Logf(utils.Norf, "Start")
 			}()
 		}(srvice)
 	}
-	err = r.InitClientHandler()
 	if err != nil {
 		return
 	}
-	r.wg.Wait()
+
+	err = r.InitClientHandler(nil)
+	if err != nil {
+		return
+	}
+	//r.wg.Wait()
 	return
 }

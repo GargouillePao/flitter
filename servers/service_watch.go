@@ -3,8 +3,8 @@ package servers
 import (
 	"errors"
 	"fmt"
+	common "github.com/gargous/flitter/common"
 	core "github.com/gargous/flitter/core"
-	utils "github.com/gargous/flitter/utils"
 	//"os"
 	"time"
 )
@@ -47,7 +47,11 @@ func (w *watchsrv) HandleMessages() {
 		switch state {
 		case core.MS_Probe:
 			msg.GetInfo().SetState(core.MS_Ask)
-			msg.AppendContent([]byte(w.worker.GetPath()))
+			ok := w.worker.putDataToMessage(msg, "path")
+			if !ok {
+				err = errors.New("Path Not Exsit")
+				return
+			}
 			err = w.worker.SendToReferee(msg, w.getRefereeServer())
 			if err != nil {
 				return err
@@ -59,25 +63,34 @@ func (w *watchsrv) HandleMessages() {
 				return
 			}
 
-			var pathData DataItem
+			var pathData common.DataItem
 			err := pathData.Parse(content)
 			if err != nil {
 				return err
 			}
-
+			pathData = w.worker.Grant("path", pathData)
 			w.worker.Set("path", pathData)
+
+			npath := core.NodePath(pathData.Data)
+			nleader, ok := npath.GetLeaderPath()
+			if ok && nleader != "" {
+				var leaderData common.DataItem
+				leaderData.Data = []byte(nleader)
+				leaderData = w.worker.Grant("path_leader", leaderData)
+				w.worker.Set("path_leader", leaderData)
+			}
 
 			msg.GetInfo().SetAcion(core.MA_Init)
 			msg.GetInfo().SetState(core.MS_Probe)
 			w.looper.Push(msg)
 		case core.MS_Failed:
 			msg.ClearContent()
-			utils.Logf(utils.Warningf, "%v[watch server failed]", msg.GetInfo())
+			common.Logf(common.Warningf, "%v[watch server failed]", msg.GetInfo())
 			msg.GetInfo().SetTime(time.Now())
 			msg.GetInfo().SetState(core.MS_Probe)
 			w.looper.Push(msg)
 		case core.MS_Error:
-			utils.ErrIn(errors.New(msg.String()), "watch server")
+			common.ErrIn(errors.New(msg.String()), "watch server")
 		}
 		return
 	})
@@ -90,13 +103,13 @@ func (w *watchsrv) HandleMessages() {
 				return
 			}
 		case core.MS_Succeed:
-			utils.Logf(utils.Norf, "Init")
+			common.Logf(common.Infof, "Access")
 		case core.MS_Failed:
 			msg.GetInfo().SetTime(time.Now())
 			msg.GetInfo().SetState(core.MS_Probe)
 			w.looper.Push(msg)
 		case core.MS_Error:
-			utils.ErrIn(errors.New(msg.GetInfo().String()), "Init")
+			common.ErrIn(errors.New(msg.GetInfo().String()), "Init")
 		}
 		return
 	})
@@ -113,7 +126,7 @@ func (w *watchsrv) Term() {
 	w.looper.Term()
 }
 func (w watchsrv) String() string {
-	str := fmt.Sprintf("Watch Server:["+
+	str := fmt.Sprintf("Watch Service:["+
 		"\n\tlooper:%p"+
 		"\n\tconfiged referee server:%v"+
 		"\n\tnow using referee server:%v"+

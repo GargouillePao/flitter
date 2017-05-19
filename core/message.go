@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	utils "github.com/gargous/flitter/utils"
+	common "github.com/gargous/flitter/common"
 	"strings"
 	"time"
 )
@@ -27,11 +27,13 @@ const (
 	MA_Upgrade
 	MA_Update
 	MA_Term
+	MA_Lock
+	MA_Unlock
 	MA_User_Request
 )
 
 func (m MessageAction) Normalize() MessageAction {
-	if m > 13 {
+	if m > 16 {
 		m = MA_Undefine
 	}
 	return m
@@ -65,6 +67,10 @@ func (m MessageAction) String() (str string) {
 		return "MA_Upgrade"
 	case MA_User_Request:
 		return "MA_User_Request"
+	case MA_Lock:
+		return "MA_Lock"
+	case MA_Unlock:
+		return "MA_Unlock"
 	case MA_Term:
 		return "MA_Term"
 	}
@@ -237,7 +243,7 @@ func (m *messageInfo) Read(buf []byte) (int, error) {
 	}
 	buf[0] = byte(m.action)
 	buf[1] = byte(m.state)
-	timebuf, err := utils.Ecode(m.sendtime)
+	timebuf, err := common.Ecode(m.sendtime)
 	if err != nil {
 		return 0, err
 	}
@@ -262,7 +268,7 @@ func (m *messageInfo) Write(buf []byte) (int, error) {
 	buf = buf[1:]
 	m.state = MessageState(buf[0]).Normalize()
 	buf = buf[1:]
-	sendtime, err := utils.ByteArrayToUInt64(buf)
+	sendtime, err := common.ByteArrayToUInt64(buf)
 	m.sendtime = int64(sendtime)
 	return m.Size(), err
 }

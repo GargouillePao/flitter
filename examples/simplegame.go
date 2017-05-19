@@ -3,11 +3,11 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
+	utils "github.com/gargous/flitter/common"
 	"github.com/gargous/flitter/core"
 	"github.com/gargous/flitter/servers"
-	"github.com/gargous/flitter/utils"
 	socketio "github.com/googollee/go-socket.io"
-	"time"
 )
 
 const (
@@ -46,23 +46,23 @@ func handleWorker(npath string) {
 	server.ConfigService(servers.ST_HeartBeat, servers.NewHeartbeatService())
 	scencer := servers.NewScenceService()
 	server.ConfigService(servers.ST_Scence, scencer)
-	server.TrickClient("position", func(so socketio.Socket) interface{} {
+	server.OnClient("pos", func(so socketio.Socket) interface{} {
 		return func(name string, x float32, y float32) {
-			var posData servers.DataItem
+			var posData utils.DataItem
 			err := posData.Parse([]float32{x, y})
 			if err != nil {
-				utils.ErrIn(errors.New("Parse Client Data With k=Postion Failed"))
+				utils.ErrIn(errors.New("Parse Client Data With k=pos Failed"))
 				return
 			}
-			err = scencer.SetClientData(name, "position", posData)
+			err = scencer.UpdateClientData(name, "pos", posData, 1)
 			if err != nil {
-				utils.ErrIn(errors.New("Set Client Data With k=Postion Failed"))
+				utils.ErrIn(errors.New("Set Client Data With k=pos Failed"))
 				return
 			}
 		}
 	})
-	scencer.OnScenceDataUpdate("position", func(cname string, cdkey string, cdvalue servers.DataItem, hostpath core.NodePath) {
-		clientsdata := scencer.GetClientData("", cdkey)
+	scencer.OnClientUpdate("pos", func(cname string, cdvalue utils.DataItem) error {
+		clientsdata := scencer.GetClientData("", "pos")
 		clientspos := make(map[string][]float32)
 		var err error
 		ok := false
@@ -75,17 +75,107 @@ func handleWorker(npath string) {
 			}
 		}
 		if ok {
-			server.GetClientSocket().BroadcastTo("flitter", cdkey, clientspos)
+			server.GetClientSocket().BroadcastTo("flitter", "pos", clientspos)
+		}
+		utils.Logf(utils.Norf, "%v", scencer)
+		return nil
+	})
+	moneydata := make(chan float32, 10)
+	server.OnClient("money", func(so socketio.Socket) interface{} {
+		return func(name string, money float32) {
+			err = scencer.LockClientData(name, "money", 1)
+			if err != nil {
+				utils.ErrIn(errors.New("Lock Client Data With k=monney Failed"))
+				return
+			}
+			moneydata <- money
 		}
 	})
-	go func() {
-		for {
-			time.Sleep(time.Second * 5)
-			if scencer.IsAccess() {
-				utils.Logf(utils.Norf, "%v", scencer)
+
+	scencer.OnClientLock("money", func(cname string) error {
+		fmt.Println(cname)
+		money := <-moneydata
+		var data utils.DataItem
+		err := data.Parse(money)
+		if err != nil {
+			return err
+		}
+		scencer.UpdateClientData(cname, "money", data, 1)
+		return nil
+	})
+	scencer.OnClientUpdate("money", func(cname string, cdvalue utils.DataItem) error {
+		fmt.Println("Update")
+		clientsdata := scencer.GetClientData("", "money")
+		clientsmoney := make(map[string]float32)
+		var err error
+		ok := false
+		for k, v := range clientsdata {
+			clientsmoney[k], err = utils.ByteArrayToFloat32(v.Data)
+			if err != nil {
+				utils.ErrIn(err)
+			} else {
+				ok = true
 			}
 		}
-	}()
+		if ok {
+			server.GetClientSocket().BroadcastTo("flitter", "money", clientsmoney)
+		}
+		utils.Logf(utils.Norf, "%v", scencer)
+		return nil
+	})
+	scoreData := make(chan float32, 10)
+	server.OnClient("score_lock", func(so socketio.Socket) interface{} {
+		return func(name string, score float32) {
+			err = scencer.LockClientData(name, "score", 0)
+			if err != nil {
+				utils.ErrIn(errors.New("Lock Client Data With k=score Failed"))
+				return
+			}
+			scoreData <- score
+		}
+	})
+	server.OnClient("score_unlock", func(so socketio.Socket) interface{} {
+		return func(name string, score float32) {
+			err = scencer.UnlockClientData(name, "score", 0)
+			if err != nil {
+				utils.ErrIn(errors.New("UnLock Client Data With k=score Failed"))
+				return
+			}
+		}
+	})
+	scencer.OnClientLock("score", func(cname string) error {
+		data := <-scoreData
+		scoresData, ok := server.Get("score")
+
+		var scores []float32
+		if ok {
+			scores, err = utils.ByteArrayToFloat32Array(scoresData.Data)
+			if err != nil {
+				return err
+			} else {
+				scores = append(scores, data)
+			}
+		} else {
+			scores = []float32{data}
+		}
+		fmt.Println(scores)
+		var scoresDataItem utils.DataItem
+		err := scoresDataItem.Parse(scores)
+		if err != nil {
+			return err
+		}
+		scencer.UpdateClientData(cname, "score", scoresDataItem, 0)
+		return nil
+	})
+	scencer.OnClientUpdate("score", func(cname string, cdvalue utils.DataItem) error {
+		scoresArray, err := utils.ByteArrayToFloat32Array(cdvalue.Data)
+		if err != nil {
+			return err
+		}
+		server.GetClientSocket().BroadcastTo("flitter", "score", scoresArray)
+		utils.Logf(utils.Norf, "score\n%v", scoresArray)
+		return nil
+	})
 	err = server.Start()
 	utils.ErrQuit(err, "Worker")
 	utils.Logf(utils.Norf, "End Worker")

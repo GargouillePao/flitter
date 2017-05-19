@@ -3,7 +3,7 @@ package servers
 import (
 	//"fmt"
 	core "github.com/gargous/flitter/core"
-	//utils "github.com/gargous/flitter/utils"
+	//common "github.com/gargous/flitter/common"
 )
 
 type QuorumService interface {

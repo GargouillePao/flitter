@@ -1,8 +1,9 @@
 package servers
 
 import (
+	"errors"
+	"github.com/gargous/flitter/common"
 	"github.com/gargous/flitter/core"
-	"github.com/gargous/flitter/utils"
 	"sync"
 )
 
@@ -12,7 +13,7 @@ type Worker interface {
 	PublishToWorker(msg core.Message) error
 	SubscribeWorker(npath core.NodePath) error
 	Server
-	DataSet
+	common.DataSet
 }
 
 type workersrv struct {
@@ -23,8 +24,8 @@ type workersrv struct {
 	subscriber core.Subscriber
 	publisher  core.Publisher
 	wg         sync.WaitGroup
+	mutex      sync.Mutex
 	baseServer
-	dataSet
 }
 
 func NewWorker(npath core.NodePath) (worker Worker, err error) {
@@ -45,7 +46,7 @@ func NewWorker(npath core.NodePath) (worker Worker, err error) {
 		senderW2W:  senderW2W,
 		subscriber: subscriber,
 	}
-	_worker.path = npath
+	_worker.Set("path", common.DataItem{Data: []byte(npath)})
 	_worker.srvices = make(map[ServiceType]Service)
 
 	recverR2WAddr, err := _ParseAddress(npath, SRT_Referee, SRT_Worker)
@@ -83,6 +84,8 @@ func NewWorker(npath core.NodePath) (worker Worker, err error) {
 }
 
 func (w *workersrv) SendToReferee(msg core.Message, npath core.NodePath) (err error) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
 	info, err := _ParseAddress(npath, SRT_Worker, SRT_Referee)
 	if err != nil {
 		return
@@ -94,6 +97,8 @@ func (w *workersrv) SendToReferee(msg core.Message, npath core.NodePath) (err er
 	return
 }
 func (w *workersrv) SendToWroker(msg core.Message, npath core.NodePath) (err error) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
 	info, err := _ParseAddress(npath, SRT_Worker, SRT_Worker)
 	if err != nil {
 		return
@@ -101,6 +106,9 @@ func (w *workersrv) SendToWroker(msg core.Message, npath core.NodePath) (err err
 	w.senderW2W.Disconnect(true)
 	w.senderW2W.AddNodeInfo(info)
 	err = w.senderW2W.Connect()
+	if err != nil {
+		return
+	}
 	err = w.senderW2W.Send(msg)
 	return
 }
@@ -108,6 +116,8 @@ func (w *workersrv) PublishToWorker(msg core.Message) error {
 	return w.publisher.Send(msg)
 }
 func (w *workersrv) SubscribeWorker(npath core.NodePath) (err error) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
 	info, err := _ParseAddress(npath, SRT_Workers, SRT_Workers)
 	if err != nil {
 		return
@@ -134,7 +144,7 @@ func (w *workersrv) Start() (err error) {
 		for {
 			msg, err := w.recverR2W.Recv()
 			if err != nil {
-				utils.ErrIn(err, "Receive From Referee", "At Wroker_"+string(w.path))
+				common.ErrIn(err, "Receive From Referee")
 				continue
 			}
 			if msg != nil {
@@ -148,7 +158,7 @@ func (w *workersrv) Start() (err error) {
 		for {
 			msg, err := w.recverW2W.Recv()
 			if err != nil {
-				utils.ErrIn(err, "Receive From Worker", "At Wroker_"+string(w.path))
+				common.ErrIn(err, "Receive From Worker")
 				continue
 			}
 			if msg != nil {
@@ -162,7 +172,7 @@ func (w *workersrv) Start() (err error) {
 		for {
 			msg, err := w.subscriber.Recv()
 			if err != nil {
-				utils.ErrIn(err, "Subscribe From Worker", "At Wroker_"+string(w.path))
+				common.ErrIn(err, "Subscribe From Worker")
 				continue
 			}
 			if msg != nil {
@@ -173,19 +183,33 @@ func (w *workersrv) Start() (err error) {
 		}
 	}()
 	w.wg.Add(len(w.srvices))
+	index := 0
 	for _, srvice := range w.srvices {
 		func(srvice Service) {
 			go func() {
-				srvice.Init(w)
+				defer w.wg.Done()
+				err = srvice.Init(w)
+				if err != nil {
+					return
+				}
+				common.Logf(common.Norf, "Initiate %v", srvice)
+				index++
+				if index >= len(w.srvices) {
+					dpath, ok := w.Get("path")
+					if !ok {
+						err = errors.New("Path Not Config")
+						return
+					}
+					common.Logf(common.Norf, "Worker Started At %v\n%v", core.NodePath(dpath.Data), w)
+				}
 				srvice.Start()
-				w.wg.Done()
 			}()
 		}(srvice)
 	}
 	w.subscriber.SetSubscribe("")
-	err = w.InitClientHandler()
+	err = w.InitClientHandler(nil)
 	if err != nil {
-		utils.ErrIn(err)
+		common.ErrIn(err)
 		return
 	}
 	w.wg.Wait()

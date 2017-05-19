@@ -3,8 +3,8 @@ package servers
 import (
 	"errors"
 	"fmt"
+	common "github.com/gargous/flitter/common"
 	core "github.com/gargous/flitter/core"
-	utils "github.com/gargous/flitter/utils"
 	//"strings"
 	"time"
 )
@@ -36,7 +36,7 @@ func (h *heartbeatsrv) HandleMessages() {
 			info.SetState(core.MS_Succeed)
 			err := h.worker.PublishToWorker(core.NewMessage(info))
 			if err != nil {
-				utils.ErrIn(err, "[publish at heartbeat to Children]")
+				common.ErrIn(err, "[publish at heartbeat to Children]")
 			}
 			return nil
 		})
@@ -86,7 +86,7 @@ func (h *heartbeatsrv) HandleMessages() {
 		case core.MS_Succeed:
 			h.worker.SendService(ST_Watch, msg)
 		case core.MS_Error:
-			utils.ErrIn(errors.New(msg.GetInfo().String()), "[heartbeat server when init]")
+			common.ErrIn(errors.New(msg.GetInfo().String()), "[heartbeat server when init]")
 		}
 		return
 	})
@@ -95,21 +95,21 @@ func (h *heartbeatsrv) HandleMessages() {
 		switch state {
 		case core.MS_Succeed:
 			msg.GetInfo().SetTime(time.Now())
-			//utils.Logf(utils.Infof, "Heartbeating succeed and now %v", msg)
+			//common.Logf(common.Infof, "Heartbeating succeed and now %v", msg)
 			msg.GetInfo().SetState(core.MS_Probe)
 			h.looper.Push(msg)
 		case core.MS_Failed:
 			msg.GetInfo().SetTime(time.Now())
-			utils.Logf(utils.Warningf, "Heartbeating faild and now %v", msg)
+			common.Logf(common.Warningf, "Heartbeating faild and now %v", msg)
 			if msg.GetVisitTimes() < 3 {
 				msg.GetInfo().SetState(core.MS_Probe)
 				h.looper.Push(msg)
 			} else {
-				utils.Logf(utils.Errf, "Heartbeating maybe dead and now %v", msg)
+				common.Logf(common.Errf, "Heartbeating maybe dead and now %v", msg)
 			}
 
 		case core.MS_Error:
-			utils.ErrIn(errors.New(msg.GetInfo().String()), "[heartbeat server when heartbeating]")
+			common.ErrIn(errors.New(msg.GetInfo().String()), "[heartbeat server when heartbeating]")
 		}
 		return
 	})

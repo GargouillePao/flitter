@@ -3,9 +3,9 @@ package servers
 import (
 	"errors"
 	"fmt"
+	"github.com/gargous/flitter/common"
 	"github.com/gargous/flitter/core"
 	saver "github.com/gargous/flitter/save"
-	"github.com/gargous/flitter/utils"
 	socketio "github.com/googollee/go-socket.io"
 	"strings"
 	"sync"
@@ -60,7 +60,6 @@ func (n *namesrv) SearchNodeInfo(npath core.NodePath) (opath core.NodePath, err 
 		}
 		//n.nameTreeSaver.SaveLastItem(saver.SA_Add)
 	}
-	utils.Logf(utils.Norf, "Search\n%v,%v", opath, n.nameTree)
 	return
 }
 func (n *namesrv) SearchNodeInfoWithGroupName(groupname string, index int) core.NodePath {
@@ -78,7 +77,7 @@ func (n *namesrv) SearchNodeInfoWithGroupName(groupname string, index int) core.
 	return targetAddress
 }
 func (n *namesrv) HandleClients() {
-	n.referee.TrickClient("flitter refer address", func(so socketio.Socket) interface{} {
+	n.referee.OnClient("flitter refer address", func(so socketio.Socket) interface{} {
 		return func(name string, index int) {
 			if !n.bussyness {
 				addr := n.SearchNodeInfoWithGroupName(name, index)
@@ -112,7 +111,7 @@ func (n *namesrv) HandleMessages() {
 				}
 			}
 		case core.MS_Error:
-			utils.ErrIn(errors.New(msg.GetInfo().String()), "[node server]")
+			common.ErrIn(errors.New(msg.GetInfo().String()), "[node server]")
 		}
 		return nil
 	})
@@ -124,7 +123,7 @@ func (n *namesrv) Term() {
 	n.looper.Term()
 }
 func (n namesrv) String() string {
-	str := fmt.Sprintf("Name Server:["+
+	str := fmt.Sprintf("Name Service:["+
 		"\n\tlooper:%p"+
 		"\n\ttree:%v"+
 		"\n]",

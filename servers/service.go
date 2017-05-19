@@ -2,8 +2,8 @@ package servers
 
 import (
 	"flag"
+	common "github.com/gargous/flitter/common"
 	core "github.com/gargous/flitter/core"
-	utils "github.com/gargous/flitter/utils"
 )
 
 const __LooperSize int = 10
@@ -36,7 +36,7 @@ func Lauch() {
 		verb := flag.Bool("v", false, "verbs")
 		filename := flag.String("log", "", "log in your path")
 		flag.Parse()
-		utils.InitLog(*verb, *filename)
+		common.InitLog(*verb, *filename)
 	}
 }
 

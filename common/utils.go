@@ -1,4 +1,4 @@
-package utils
+package common
 
 import (
 	"bytes"
@@ -20,6 +20,7 @@ var __logAddr io.Writer
 var __verbs bool = false
 
 func InitLog(verb bool, fname string) (filename string, err error) {
+	__verbs = verb
 	if fname != "" {
 		filename = path.Join(fname, fmt.Sprintf("%d", time.Now().UnixNano())+".log")
 		fd, err := os.Create(filename)
@@ -28,7 +29,6 @@ func InitLog(verb bool, fname string) (filename string, err error) {
 	} else {
 		SetLogAddress(os.Stdout)
 	}
-	__verbs = verb
 	return "", nil
 }
 
@@ -49,10 +49,18 @@ func ErrIn(err error, info ...string) (ok bool) {
 	ok = false
 	if err != nil {
 		ok = true
-		_, file, line, _ := runtime.Caller(1)
+		callSkips := 10
+		callStr := ""
+		for i := 1; i < callSkips; i++ {
+			_, file, line, ok := runtime.Caller(i)
+			if !ok {
+				break
+			}
+			callStr += fmt.Sprintf("[%v:%v]->", path.Base(file), line)
+		}
 		__errors <- ErrAppend(
 			ErrAppend(
-				errors.New(fmt.Sprintf("[at %v %v]", path.Base(file), line)),
+				errors.New(fmt.Sprintf("[at %s]", callStr[:len(callStr)-2])),
 				err.Error(),
 			),
 			info...,
@@ -68,16 +76,14 @@ func CloseError() {
 	}
 }
 
-func Logf(logType func(format string, item ...interface{}) string, format string, item ...interface{}) {
+func Logf(logType func(string, ...interface{}) string, format string, item ...interface{}) {
 	if __verbs {
 		log := fmt.Sprintf(format, item...)
 		logwithcolor := logType(log)
-		if __logAddr != nil {
-			if __logAddr == os.Stdout {
-				fmt.Fprintln(__logAddr, logwithcolor)
-			} else {
-				fmt.Fprintln(__logAddr, log)
-			}
+		if __logAddr == nil || __logAddr == os.Stdout {
+			fmt.Fprintln(__logAddr, logwithcolor)
+		} else {
+			fmt.Fprintln(__logAddr, log)
 		}
 	}
 }
@@ -176,8 +182,9 @@ func ByteArrayToUInt64(buf []byte) (out uint64, err error) {
 	return
 }
 func ByteArrayToFloat32(buf []byte) (out float32, err error) {
-	buffer := bytes.NewReader(buf)
-	err = binary.Read(buffer, binary.BigEndian, out)
+	buffer := bytes.NewBuffer(buf)
+	decoder := gob.NewDecoder(buffer)
+	err = decoder.Decode(&out)
 	return
 }
 
