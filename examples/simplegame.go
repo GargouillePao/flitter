@@ -81,6 +81,25 @@ func handleWorker(npath string) {
 		return nil
 	})
 	moneydata := make(chan float32, 10)
+	server.OnClient("money_lock", func(so socketio.Socket) interface{} {
+		return func(name string, money float32) {
+			err = scencer.LockClientData(name, "money", -1)
+			if err != nil {
+				utils.ErrIn(errors.New("Lock Client Data With k=money all Failed"))
+				return
+			}
+			moneydata <- money
+		}
+	})
+	server.OnClient("money_unlock", func(so socketio.Socket) interface{} {
+		return func(name string, score float32) {
+			err = scencer.UnlockClientData(name, "money", -1)
+			if err != nil {
+				utils.ErrIn(errors.New("UnLock Client Data With k=score Failed"))
+				return
+			}
+		}
+	})
 	server.OnClient("money", func(so socketio.Socket) interface{} {
 		return func(name string, money float32) {
 			err = scencer.LockClientData(name, "money", 1)
@@ -123,6 +142,7 @@ func handleWorker(npath string) {
 		utils.Logf(utils.Norf, "%v", scencer)
 		return nil
 	})
+
 	scoreData := make(chan float32, 10)
 	server.OnClient("score_lock", func(so socketio.Socket) interface{} {
 		return func(name string, score float32) {
@@ -176,6 +196,7 @@ func handleWorker(npath string) {
 		utils.Logf(utils.Norf, "score\n%v", scoresArray)
 		return nil
 	})
+
 	err = server.Start()
 	utils.ErrQuit(err, "Worker")
 	utils.Logf(utils.Norf, "End Worker")

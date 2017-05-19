@@ -248,7 +248,7 @@ func (s *BaseDataSet) Lock(holder string, key string) (ok bool) {
 func (s *BaseDataSet) Unlock(key string) {
 	s.datamutex.Lock()
 	defer s.datamutex.Unlock()
-	_, ok := s.Get(key)
+	_, ok := s.get(key)
 	if !ok {
 		return
 	}
@@ -281,16 +281,10 @@ func (s *BaseDataSet) set(key string, value DataItem) (ok bool) {
 		ok = false
 	}
 	s.Datas[key] = valueLog
-	//fmt.Println("SET----", s.Datas[key], "----", value, "----", key)
 	return
 }
 
-func (s *BaseDataSet) Set(key string, value DataItem) (ok bool) {
-	s.datamutex.Lock()
-	defer s.datamutex.Unlock()
-	return s.set(key, value)
-}
-func (s *BaseDataSet) Get(key string) (value DataItem, ok bool) {
+func (s BaseDataSet) get(key string) (value DataItem, ok bool) {
 	if s.Datas == nil {
 		ok = false
 		return
@@ -307,6 +301,16 @@ func (s *BaseDataSet) Get(key string) (value DataItem, ok bool) {
 	if !ok {
 		return
 	}
+	return
+}
+
+func (s *BaseDataSet) Set(key string, value DataItem) (ok bool) {
+	s.datamutex.Lock()
+	defer s.datamutex.Unlock()
+	return s.set(key, value)
+}
+func (s BaseDataSet) Get(key string) (value DataItem, ok bool) {
+	value, ok = s.get(key)
 	if value.Data == nil || len(value.Data) <= 0 {
 		ok = false
 		return

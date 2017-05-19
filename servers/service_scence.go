@@ -120,16 +120,36 @@ func (s *scencesrvice) setClientData(name string, key string, value common.DataI
 	return
 }
 func (s *scencesrvice) lockClientsData(name string, key string, lock bool) (ok bool) {
-	for _, client := range s.clients {
-		if lock {
+	s.clientsMutex.Lock()
+	defer s.clientsMutex.Unlock()
+	if lock {
+		lockedClients := make([]common.DataSet, 0)
+		notAllowLock := false
+		for _, client := range s.clients {
 			ok = client.Lock(name, key)
 			if !ok {
-				return false
+				notAllowLock = true
+				break
 			}
-		} else {
+			lockedClients = append(lockedClients, client)
+		}
+		fmt.Println("----Lock----\n", lockedClients)
+		if !notAllowLock {
+			ok = true
+			return
+		}
+		for _, client := range lockedClients {
 			client.Unlock(key)
 		}
+		ok = false
+		return
+	} else {
+		for _, client := range s.clients {
+			client.Unlock(key)
+		}
+		fmt.Println("----UnLock----\n", s.clients)
 	}
+
 	ok = true
 	return
 }
@@ -145,9 +165,7 @@ func (s *scencesrvice) lockClientData(name string, key string, lock bool) (ok bo
 		ok = data.Lock(name, key)
 	} else {
 		ok = true
-		if data.IsLocked(name, key) {
-			data.Unlock(key)
-		}
+		data.Unlock(key)
 	}
 	s.clients[name] = data
 	return
@@ -304,6 +322,34 @@ func (s *scencesrvice) HandleClients() {
 		}
 	})
 }
+
+var (
+	__err_Not_Catch_Lock error = errors.New("Not_Catch_Lock")
+)
+
+func (s scencesrvice) ThatIsMe(cname string) (ok bool, err error) {
+	npathd, ok := s.worker.Get("path")
+	if !ok {
+		err = errors.New("Path Not Exsit")
+		return
+	}
+	ninfo, ok := core.NodePath(npathd.Data).GetNodeInfo()
+	if !ok {
+		err = errors.New("Node Not Exsit")
+		return
+	}
+	workername, _, ok := s.deparseClientName(cname)
+	if !ok {
+		err = errors.New("Invalid Name")
+		return
+	}
+	if workername != ninfo.Name {
+		ok = false
+		return
+	}
+	ok = true
+	return
+}
 func (s *scencesrvice) HandleMessages() {
 	s.looper.AddHandler(0, core.MA_Init, func(msg core.Message) (err error) {
 		_, state, _ := msg.GetInfo().Info()
@@ -350,18 +396,18 @@ func (s *scencesrvice) HandleMessages() {
 				case -1:
 					for _, data := range s.clients {
 						if data.IsLocked(cname, cdkey) {
-							return errors.New("Locke Failed When Probe")
+							return errors.New("Lock Failed When Probe")
 						}
 					}
 				case 0:
 					if s.worker.IsLocked(cname, cdkey) {
-						return errors.New("Locke Failed When Probe")
+						return errors.New("Lock Failed When Probe")
 					}
 				case 1:
 					clientData, ok := s.clients[cname]
 					if ok {
 						if clientData.IsLocked(cname, cdkey) {
-							return errors.New("Locke Failed When Probe")
+							return errors.New("Lock Failed When Probe")
 						}
 					}
 				default:
@@ -398,6 +444,9 @@ func (s *scencesrvice) HandleMessages() {
 			}
 			err = cbSucceed(cname, cdkey, cdvalue, hostpath, count)
 			if err != nil {
+				if err == __err_Not_Catch_Lock {
+					return nil
+				}
 				return err
 			}
 			if s.publicHandlers != nil {
@@ -429,7 +478,6 @@ func (s *scencesrvice) HandleMessages() {
 				switch count {
 				case -1:
 					if !s.lockClientsData(name, key, true) {
-						s.lockClientsData(name, key, false)
 						msg.GetInfo().SetState(core.MS_Failed)
 						s.looper.Push(msg)
 						err = errors.New("Lock Failed When Succeed")
@@ -448,20 +496,12 @@ func (s *scencesrvice) HandleMessages() {
 					}
 				}
 
-				npathd, ok := s.worker.Get("path")
-				if !ok {
-					return errors.New("Path Not Exsit")
+				ok, err := s.ThatIsMe(name)
+				if err != nil {
+					return
 				}
-				ninfo, ok := core.NodePath(npathd.Data).GetNodeInfo()
 				if !ok {
-					return errors.New("Node Not Exsit")
-				}
-				workername, _, ok := s.deparseClientName(name)
-				if !ok {
-					return errors.New("Invalid Name")
-				}
-				if workername != ninfo.Name {
-					return errors.New("You Not Get Lock")
+					err = __err_Not_Catch_Lock
 				}
 				return
 			},
@@ -473,7 +513,7 @@ func (s *scencesrvice) HandleMessages() {
 			func(name string, key string, value common.DataItem, hostpath core.NodePath, count int) error {
 				return s.UnlockClientData(name, key, count)
 			},
-			func(name string, key string, value common.DataItem, hostpath core.NodePath, count int) error {
+			func(name string, key string, value common.DataItem, hostpath core.NodePath, count int) (err error) {
 				switch count {
 				case -1:
 					s.lockClientsData(name, key, false)
@@ -482,7 +522,14 @@ func (s *scencesrvice) HandleMessages() {
 				case 1:
 					s.lockClientData(name, key, false)
 				}
-				return nil
+				ok, err := s.ThatIsMe(name)
+				if err != nil {
+					return
+				}
+				if !ok {
+					err = __err_Not_Catch_Lock
+				}
+				return
 			},
 		)
 	})
