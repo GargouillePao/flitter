@@ -11,6 +11,7 @@ import (
 
 type baseServer struct {
 	common.BaseDataSet
+	serverPath     core.NodePath
 	srvices        map[ServiceType]Service
 	clientSrv      *socketio.Server
 	clientSessions map[string]socketio.Socket
@@ -18,7 +19,8 @@ type baseServer struct {
 }
 
 type Server interface {
-	putDataToMessage(msg core.Message, keys ...string) (ok bool)
+	SetPath(path core.NodePath)
+	GetPath() (path core.NodePath)
 	Start() error
 	InitClientHandler(cb func()) error
 	OnClient(event string, handler func(so socketio.Socket) interface{})
@@ -27,18 +29,12 @@ type Server interface {
 	GetClientSocket() *socketio.Server
 }
 
-func (s *baseServer) putDataToMessage(msg core.Message, keys ...string) (ok bool) {
-	for _, key := range keys {
-		item, ok := s.Get(key)
-		if !ok {
-			return ok
-		}
-		msg.AppendContent(item.Data)
-	}
-	ok = true
-	return
+func (b *baseServer) SetPath(path core.NodePath) {
+	b.serverPath = path
 }
-
+func (b baseServer) GetPath() (path core.NodePath) {
+	return b.serverPath
+}
 func (b *baseServer) GetClientSocket() *socketio.Server {
 	return b.clientSrv
 }
@@ -102,11 +98,8 @@ func (b *baseServer) InitClientHandler(cb func()) (err error) {
 	}
 	http.Handle("/socket.io/", b.clientSrv)
 
-	npath, ok := b.Get("path")
-	if !ok {
-		err = errors.New("Path Not Exist")
-	}
-	info, err := _ParseAddress(core.NodePath(npath.Data), SRT_Undefine, SRT_Client)
+	npath := b.GetPath()
+	info, err := _ParseAddress(npath, SRT_Undefine, SRT_Client)
 	if err != nil {
 		err = common.ErrAppend(err, "Parse Address")
 		return

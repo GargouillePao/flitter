@@ -47,11 +47,7 @@ func (w *watchsrv) HandleMessages() {
 		switch state {
 		case core.MS_Probe:
 			msg.GetInfo().SetState(core.MS_Ask)
-			ok := w.worker.putDataToMessage(msg, "path")
-			if !ok {
-				err = errors.New("Path Not Exsit")
-				return
-			}
+			msg.AppendContent([]byte(w.worker.GetPath()))
 			err = w.worker.SendToReferee(msg, w.getRefereeServer())
 			if err != nil {
 				return err
@@ -62,24 +58,8 @@ func (w *watchsrv) HandleMessages() {
 				err = errors.New("No Content")
 				return
 			}
-
-			var pathData common.DataItem
-			err := pathData.Parse(content)
-			if err != nil {
-				return err
-			}
-			pathData = w.worker.Grant("path", pathData)
-			w.worker.Set("path", pathData)
-
-			npath := core.NodePath(pathData.Data)
-			nleader, ok := npath.GetLeaderPath()
-			if ok && nleader != "" {
-				var leaderData common.DataItem
-				leaderData.Data = []byte(nleader)
-				leaderData = w.worker.Grant("path_leader", leaderData)
-				w.worker.Set("path_leader", leaderData)
-			}
-
+			serverpath := core.NodePath(content)
+			w.worker.SetPath(serverpath)
 			msg.GetInfo().SetAcion(core.MA_Init)
 			msg.GetInfo().SetState(core.MS_Probe)
 			w.looper.Push(msg)

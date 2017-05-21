@@ -117,7 +117,16 @@ func ErrQuit(err error, info ...string) {
 
 func ErrInfo(err error, info ...string) (ok bool) {
 	if err != nil {
-		Logf(Errf, "Error(QAQ):%s", err.Error()+strings.Join(info, ","))
+		callSkips := 10
+		callStr := ""
+		for i := 1; i < callSkips; i++ {
+			_, file, line, ok := runtime.Caller(i)
+			if !ok {
+				break
+			}
+			callStr += fmt.Sprintf("[%v:%v]->", path.Base(file), line)
+		}
+		Logf(Errf, "Error(QAQ):%s|%s", callStr[:len(callStr)-2], err.Error()+strings.Join(info, ","))
 		ok = true
 	} else {
 		ok = false
@@ -126,7 +135,7 @@ func ErrInfo(err error, info ...string) (ok bool) {
 }
 
 func ErrAppend(err error, info ...string) error {
-	errstr := err.Error() + strings.Join(info, ",")
+	errstr := err.Error() + "," + strings.Join(info, ",")
 	return errors.New(errstr)
 }
 

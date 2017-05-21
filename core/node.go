@@ -45,15 +45,37 @@ func (n NodePath) GetLeaderPath() (lpath NodePath, ok bool) {
 func (n NodePath) GetNodeInfo() (info NodeInfo, ok bool) {
 	npath := strings.Split(string(n), "/")
 	if len(npath) < 1 {
+
 		ok = false
 		return
 	}
 	info = NewNodeInfo()
-	if info.Parse(npath[len(npath)-1]) != nil {
+	err := info.Parse(npath[len(npath)-1])
+	if err != nil {
 		ok = false
 	}
 	ok = true
 	return
+}
+func (n NodePath) GetGroupName() (name string, ok bool) {
+	ninfo, ok := n.GetNodeInfo()
+	if !ok || ninfo.Name == "" {
+		ok = false
+		return "", ok
+	}
+	lnode, ok := n.GetLeaderPath()
+	if ok {
+		linfo, ok := lnode.GetNodeInfo()
+		if !ok || linfo.Name == "" {
+			ok = false
+			return "", ok
+		}
+		name = linfo.Name
+	} else {
+		name = ninfo.Name
+	}
+	ok = true
+	return name, ok
 }
 
 type NodeInfo struct {

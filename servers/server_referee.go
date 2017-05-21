@@ -1,7 +1,6 @@
 package servers
 
 import (
-	"errors"
 	"github.com/gargous/flitter/common"
 	"github.com/gargous/flitter/core"
 	"sync"
@@ -26,7 +25,7 @@ func NewReferee(npath core.NodePath) (referee Referee, err error) {
 	_referee := &refereesrv{
 		senderR2W: senderR2W,
 	}
-	_referee.Set("path", common.DataItem{Data: []byte(npath)})
+	_referee.SetPath(npath)
 	_referee.srvices = make(map[ServiceType]Service)
 	info, err := _ParseAddress(npath, SRT_Worker, SRT_Referee)
 	if err != nil {
@@ -85,12 +84,8 @@ func (r *refereesrv) Start() (err error) {
 				common.Logf(common.Norf, "Initiate %v", srvice)
 				index++
 				if index >= len(r.srvices) {
-					dpath, ok := r.Get("path")
-					if !ok {
-						err = errors.New("Path Not Config")
-						return
-					}
-					common.Logf(common.Norf, "Referee Started At %v\n%v", core.NodePath(dpath.Data), r)
+					dpath := r.GetPath()
+					common.Logf(common.Norf, "Referee Started At %v\n%v", dpath, r)
 				}
 				srvice.Start()
 			}()

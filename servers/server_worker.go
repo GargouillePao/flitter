@@ -1,7 +1,6 @@
 package servers
 
 import (
-	"errors"
 	"github.com/gargous/flitter/common"
 	"github.com/gargous/flitter/core"
 	"sync"
@@ -46,7 +45,7 @@ func NewWorker(npath core.NodePath) (worker Worker, err error) {
 		senderW2W:  senderW2W,
 		subscriber: subscriber,
 	}
-	_worker.Set("path", common.DataItem{Data: []byte(npath)})
+	_worker.SetPath(npath)
 	_worker.srvices = make(map[ServiceType]Service)
 
 	recverR2WAddr, err := _ParseAddress(npath, SRT_Referee, SRT_Worker)
@@ -195,12 +194,7 @@ func (w *workersrv) Start() (err error) {
 				common.Logf(common.Norf, "Initiate %v", srvice)
 				index++
 				if index >= len(w.srvices) {
-					dpath, ok := w.Get("path")
-					if !ok {
-						err = errors.New("Path Not Config")
-						return
-					}
-					common.Logf(common.Norf, "Worker Started At %v\n%v", core.NodePath(dpath.Data), w)
+					common.Logf(common.Norf, "Worker Started At %v\n%v", w.GetPath(), w)
 				}
 				srvice.Start()
 			}()
@@ -209,7 +203,6 @@ func (w *workersrv) Start() (err error) {
 	w.subscriber.SetSubscribe("")
 	err = w.InitClientHandler(nil)
 	if err != nil {
-		common.ErrIn(err)
 		return
 	}
 	w.wg.Wait()

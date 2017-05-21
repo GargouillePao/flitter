@@ -6,7 +6,6 @@ import (
 	common "github.com/gargous/flitter/common"
 	core "github.com/gargous/flitter/core"
 	socketio "github.com/googollee/go-socket.io"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,12 +13,12 @@ import (
 
 type ScenceService interface {
 	Service
-	LockClientData(name string, key string, count int) (err error)
-	UnlockClientData(name string, key string, count int) (err error)
-	UpdateClientData(name string, key string, value common.DataItem, count int) (err error)
-	GetClientData(name string, key string) (values map[string]common.DataItem)
-	OnClientUpdate(cdkey string, cb func(cname string, cdvalue common.DataItem) error)
-	OnClientLock(cdkey string, cb func(cname string) error)
+	LockClientData(cInfo core.ClientInfo, dInfo core.DataInfo) (err error)
+	UnlockClientData(cInfo core.ClientInfo, dInfo core.DataInfo) (err error)
+	UpdateClientData(cInfo core.ClientInfo, dInfo core.DataInfo) (err error)
+	GetClientData(cInfo core.ClientInfo, dInfo core.DataInfo) (values map[string]common.DataItem)
+	OnClientUpdate(dInfo core.DataInfo, cb func(cInfo core.ClientInfo, dInfo core.DataInfo) error)
+	OnClientLock(dInfo core.DataInfo, cb func(cInfo core.ClientInfo) error)
 	IsAccess() bool
 }
 
@@ -28,7 +27,7 @@ type scencesrvice struct {
 	worker       Worker
 	accessable   bool
 	baseService
-	publicHandlers map[string]func(cname string, cdvalue common.DataItem, hostpath core.NodePath) error
+	publicHandlers map[string]func(cInfo core.ClientInfo, dInfo core.DataInfo) error
 	clients        map[string]common.DataSet
 }
 
@@ -48,85 +47,29 @@ func (s *scencesrvice) Init(srv interface{}) error {
 	s.HandleClients()
 	return nil
 }
-func (s *scencesrvice) parseClientName(hostname string, name string) (targename string, ok bool) {
-	workerpathi, ok := s.worker.Get("path")
-	if !ok {
-		return
-	}
-	info, ok := core.NodePath(workerpathi.Data).GetNodeInfo()
-	if !ok {
-		return
-	}
-	workername := info.Name
-	names := strings.Split(name, "|")
-	if len(names) == 3 {
-		targename = name
-	} else {
-		if hostname == workername {
-			targename = name
-		} else {
-			targename = fmt.Sprintf("%s|%d|%s", workername, time.Now().UnixNano(), name)
-		}
-	}
-
-	ok = true
-	return
-}
-func (s *scencesrvice) deparseClientName(targename string) (hostname string, name string, ok bool) {
-	names := strings.Split(targename, "|")
-	if len(names) == 3 {
-		hostname = names[0]
-		name = names[2]
-		ok = true
-	} else {
-		ok = false
-	}
-	return
-}
-func (s *scencesrvice) parseClientData(msg core.Message) (name string, key string, value common.DataItem, hostpath core.NodePath, clientCount int, err error) {
-	contLen := len(msg.GetContents())
-	switch {
-	case contLen < 5:
-		err = errors.New("Invalid Content")
-	case contLen >= 5:
-		name = string(msg.GetContents()[0])
-		key = string(msg.GetContents()[1])
-		err = value.Parse(msg.GetContents()[2])
-		if err != nil {
-			return
-		}
-		clientCount, err = strconv.Atoi(string(msg.GetContents()[3]))
-		if err != nil {
-			return
-		}
-		hostpath = core.NodePath(msg.GetContents()[4])
-	}
-	return
-}
-func (s *scencesrvice) setClientData(name string, key string, value common.DataItem) {
+func (s *scencesrvice) setClientData(cInfo core.ClientInfo, dInfo core.DataInfo) {
 	s.clientsMutex.Lock()
 	defer s.clientsMutex.Unlock()
-
 	if s.clients == nil {
 		s.clients = make(map[string]common.DataSet)
 	}
-	targetclient, ok_ := s.clients[name]
+	targetclient, ok_ := s.clients[cInfo.GetName()]
 	if !ok_ || targetclient == nil {
 		targetclient = common.NewDataSet()
 	}
-	targetclient.Set(key, value)
-	s.clients[name] = targetclient
+	targetclient.Set(dInfo.Key, dInfo.Value)
+	s.clients[cInfo.GetName()] = targetclient
 
 	return
 }
-func (s *scencesrvice) lockClientsData(name string, key string, lock bool) (ok bool) {
+func (s *scencesrvice) lockClientsData(cInfo core.ClientInfo, dInfo core.DataInfo, lock bool) (ok bool) {
 	s.clientsMutex.Lock()
 	defer s.clientsMutex.Unlock()
 	if lock {
 		lockedClients := make([]common.DataSet, 0)
 		notAllowLock := false
 		for _, client := range s.clients {
-			ok = client.Lock(name, key)
+			ok = client.Lock(cInfo.GetName(), dInfo.Key)
 			if !ok {
 				notAllowLock = true
 				break
@@ -139,13 +82,13 @@ func (s *scencesrvice) lockClientsData(name string, key string, lock bool) (ok b
 			return
 		}
 		for _, client := range lockedClients {
-			client.Unlock(key)
+			client.Unlock(dInfo.Key)
 		}
 		ok = false
 		return
 	} else {
 		for _, client := range s.clients {
-			client.Unlock(key)
+			client.Unlock(dInfo.Key)
 		}
 		fmt.Println("----UnLock----\n", s.clients)
 	}
@@ -153,39 +96,32 @@ func (s *scencesrvice) lockClientsData(name string, key string, lock bool) (ok b
 	ok = true
 	return
 }
-func (s *scencesrvice) lockClientData(name string, key string, lock bool) (ok bool) {
+func (s *scencesrvice) lockClientData(cInfo core.ClientInfo, dInfo core.DataInfo, lock bool) (ok bool) {
 	s.clientsMutex.Lock()
 	defer s.clientsMutex.Unlock()
-
-	data, ok := s.clients[name]
+	data, ok := s.clients[cInfo.GetName()]
 	if !ok {
 		data = common.NewDataSet()
 	}
 	if lock {
-		ok = data.Lock(name, key)
+		ok = data.Lock(cInfo.GetName(), dInfo.Key)
 	} else {
 		ok = true
-		data.Unlock(key)
+		data.Unlock(dInfo.Key)
 	}
-	s.clients[name] = data
+	s.clients[cInfo.GetName()] = data
 	return
 }
 
 //outside involk only
-func (s *scencesrvice) LockClientData(name string, key string, count int) (err error) {
+func (s *scencesrvice) LockClientData(cInfo core.ClientInfo, dInfo core.DataInfo) (err error) {
 	info := core.NewMessageInfo()
 	info.SetAcion(core.MA_Lock)
 	info.SetState(core.MS_Probe)
 	msg := core.NewMessage(info)
-	if name != "" {
-		msg.AppendContent([]byte(name))
-	}
-	msg.AppendContent([]byte(key))
-	msg.AppendContent([]byte("lock"))
-	msg.AppendContent([]byte(strconv.Itoa(count)))
-	ok := s.worker.putDataToMessage(msg, "path")
-	if !ok {
-		err = errors.New("Path Not Exsit")
+	cInfo.AppendToMsg(msg)
+	err = dInfo.AppendToMsg(msg)
+	if err != nil {
 		return
 	}
 	s.looper.Push(msg)
@@ -193,20 +129,14 @@ func (s *scencesrvice) LockClientData(name string, key string, count int) (err e
 }
 
 //outside involk only
-func (s *scencesrvice) UnlockClientData(name string, key string, count int) (err error) {
+func (s *scencesrvice) UnlockClientData(cInfo core.ClientInfo, dInfo core.DataInfo) (err error) {
 	info := core.NewMessageInfo()
 	info.SetAcion(core.MA_Unlock)
 	info.SetState(core.MS_Probe)
 	msg := core.NewMessage(info)
-	if name != "" {
-		msg.AppendContent([]byte(name))
-	}
-	msg.AppendContent([]byte(key))
-	msg.AppendContent([]byte("unlock"))
-	msg.AppendContent([]byte(strconv.Itoa(count)))
-	ok := s.worker.putDataToMessage(msg, "path")
-	if !ok {
-		err = errors.New("Path Not Exsit")
+	cInfo.AppendToMsg(msg)
+	err = dInfo.AppendToMsg(msg)
+	if err != nil {
 		return
 	}
 	s.looper.Push(msg)
@@ -214,111 +144,101 @@ func (s *scencesrvice) UnlockClientData(name string, key string, count int) (err
 }
 
 //outside involk only
-func (s *scencesrvice) UpdateClientData(name string, key string, value common.DataItem, count int) (err error) {
-	data, ok := s.clients[name]
+func (s *scencesrvice) UpdateClientData(cInfo core.ClientInfo, dInfo core.DataInfo) (err error) {
+	data, ok := s.clients[cInfo.GetName()]
 	if ok {
-		value = data.Grant(key, value)
+		dInfo.Value = data.Grant(dInfo.Key, dInfo.Value)
 	}
 	info := core.NewMessageInfo()
 	info.SetAcion(core.MA_Update)
 	info.SetState(core.MS_Probe)
 	msg := core.NewMessage(info)
-	msg.AppendContent([]byte(name))
-	msg.AppendContent([]byte(key))
-	b, err := value.Bytes()
+	cInfo.AppendToMsg(msg)
+	err = dInfo.AppendToMsg(msg)
 	if err != nil {
-		return
-	}
-	msg.AppendContent(b)
-	msg.AppendContent([]byte(strconv.Itoa(count)))
-	ok = s.worker.putDataToMessage(msg, "path")
-	if !ok {
-		err = errors.New("Path Not Exsit")
 		return
 	}
 	s.looper.Push(msg)
 	return
 }
 
-func (s *scencesrvice) GetClientDatas(name string) map[string]common.DataSet {
-	if name == "" {
+func (s *scencesrvice) GetClientDatas(cInfo core.ClientInfo) map[string]common.DataSet {
+	if cInfo.GetName() == "" {
 		return s.clients
 	} else {
-		return map[string]common.DataSet{name: s.clients[name]}
+		return map[string]common.DataSet{cInfo.GetName(): s.clients[cInfo.GetName()]}
 	}
 }
-func (s *scencesrvice) GetClientData(name string, key string) (values map[string]common.DataItem) {
-	sdataset := s.GetClientDatas(name)
+func (s *scencesrvice) GetClientData(cInfo core.ClientInfo, dInfo core.DataInfo) (values map[string]common.DataItem) {
+	sdataset := s.GetClientDatas(cInfo)
 	values = make(map[string]common.DataItem)
 	for name, data := range sdataset {
-		value, ok := data.Get(key)
-		if ok {
-			values[name] = value
+		if data != nil {
+			value, ok := data.Get(dInfo.Key)
+			if ok {
+				values[name] = value
+			}
 		}
 	}
 	return
 }
-func (s *scencesrvice) SetServerData(key string, value common.DataItem) {
-	s.worker.Set(key, value)
+func (s *scencesrvice) SetServerData(dInfo core.DataInfo) {
+	s.worker.Set(dInfo.Key, dInfo.Value)
 }
-func (s *scencesrvice) OnClientUpdate(cdkey string, cb func(cname string, cdvalue common.DataItem) error) {
-	s.On(core.MA_Update, cdkey, func(cname string, cdvalue common.DataItem, hostpath core.NodePath) error {
-		return cb(cname, cdvalue)
+func (s *scencesrvice) OnClientUpdate(dInfo core.DataInfo, cb func(cInfo core.ClientInfo, dInfo core.DataInfo) error) {
+	s.On(core.MA_Update, dInfo, func(cInfo core.ClientInfo, dInfo core.DataInfo) error {
+		return cb(cInfo, dInfo)
 	})
 }
-func (s *scencesrvice) OnClientLock(cdkey string, cb func(cname string) error) {
-	s.On(core.MA_Lock, cdkey, func(cname string, cdvalue common.DataItem, hostpath core.NodePath) error {
-		return cb(cname)
+func (s *scencesrvice) OnClientLock(dInfo core.DataInfo, cb func(cInfo core.ClientInfo) error) {
+	s.On(core.MA_Lock, dInfo, func(cInfo core.ClientInfo, dInfo core.DataInfo) error {
+		return cb(cInfo)
 	})
 }
-func (s *scencesrvice) On(action core.MessageAction, cdkey string, cb func(cname string, cdvalue common.DataItem, hostpath core.NodePath) error) {
+func (s *scencesrvice) On(action core.MessageAction, dInfo core.DataInfo, cb func(cInfo core.ClientInfo, dInfo core.DataInfo) error) {
 	if s.publicHandlers == nil {
-		s.publicHandlers = make(map[string]func(cname string, cdvalue common.DataItem, hostpath core.NodePath) error)
+		s.publicHandlers = make(map[string]func(cInfo core.ClientInfo, dInfo core.DataInfo) error)
 	}
-	s.publicHandlers[action.String()+cdkey] = cb
+	s.publicHandlers[action.String()+dInfo.Key] = cb
 }
 func (s *scencesrvice) HandleClients() {
 	s.worker.OnClient("flitter enter", func(so socketio.Socket) interface{} {
-		return func(name string, hostname string) {
+		return func(name string) {
 			var soidData common.DataItem
 			err := soidData.Parse(so.Id())
 			if err != nil {
 				common.ErrIn(err)
 				return
 			}
-			targename, ok := s.parseClientName(hostname, name)
-			if !ok {
-				common.ErrIn(errors.New("Parse Client Error"))
-				return
-			}
-			common.Logf(common.Norf, "Client %v want to enter", targename)
-
+			cInfo := core.NewClientInfo(name, s.worker.GetPath())
+			common.Logf(common.Norf, "Client %v want to enter", cInfo.GetName())
 			if !s.accessable {
 				so.Emit("flitter enter", __Client_Reply_bussy)
-				common.Logf(common.Warningf, "Client %v should wait", targename)
+				common.Logf(common.Warningf, "Client %v should wait", cInfo.GetName())
 				return
 			}
-			targclient, ok := s.clients[targename]
+			targclient, ok := s.clients[cInfo.GetName()]
 			if ok {
 				_, ok = targclient.Get("socket")
 				if ok {
-					common.Logf(common.Warningf, "Client %v has entered", targename)
+					common.Logf(common.Warningf, "Client %v has entered", cInfo.GetName())
 					return
 				}
 			}
-			so.Emit("flitter enter", targename)
-			common.Logf(common.Infof, "Client %v entered ", targename)
-
-			s.setClientData(targename, "socket", soidData)
-
+			so.Emit("flitter enter", cInfo.GetName())
+			common.Logf(common.Infof, "Client %v entered ", cInfo.GetName())
+			dInfo := core.NewDataInfo("socket")
+			dInfo.Value = soidData
+			s.setClientData(cInfo, dInfo)
 			var clientsData common.DataItem
 			err = clientsData.Parse(s.clients)
 			if err != nil {
 				common.ErrIn(err)
 				return
 			}
-
-			s.SetServerData("clients", clientsData)
+			serverInfo := core.NewDataInfo("clients")
+			serverInfo.Value = clientsData
+			s.SetServerData(serverInfo)
 		}
 	})
 }
@@ -328,17 +248,12 @@ var (
 )
 
 func (s scencesrvice) ThatIsMe(cname string) (ok bool, err error) {
-	npathd, ok := s.worker.Get("path")
-	if !ok {
-		err = errors.New("Path Not Exsit")
-		return
-	}
-	ninfo, ok := core.NodePath(npathd.Data).GetNodeInfo()
+	ninfo, ok := core.NodePath(s.worker.GetPath()).GetNodeInfo()
 	if !ok {
 		err = errors.New("Node Not Exsit")
 		return
 	}
-	workername, _, ok := s.deparseClientName(cname)
+	workername, _, ok := common.DeparseClientName(cname)
 	if !ok {
 		err = errors.New("Invalid Name")
 		return
@@ -371,69 +286,69 @@ func (s *scencesrvice) HandleMessages() {
 	})
 	broadcast := func(
 		msg core.Message,
-		cbAsk func(name string, key string, value common.DataItem, hostpath core.NodePath, count int) error,
-		cbSucceed func(name string, key string, value common.DataItem, hostpath core.NodePath, count int) error,
+		cbAsk func(cInfo core.ClientInfo, dInfo core.DataInfo) error,
+		cbSucceed func(cInfo core.ClientInfo, dInfo core.DataInfo) error,
 	) (err error) {
 		action, state, _ := msg.GetInfo().Info()
-		cname, cdkey, cdvalue, hostpath, count, err := s.parseClientData(msg)
-		if err != nil {
-			return err
-		}
-		host, ok := hostpath.GetNodeInfo()
+		var clientInfo core.ClientInfo
+		ok := clientInfo.Parse(msg)
 		if !ok {
-			return errors.New("Invalid NodePath")
+			return errors.New("Invalid ClientInfo")
 		}
-
+		var dataInfo core.DataInfo
+		ok = dataInfo.Parse(msg)
+		if !ok {
+			return errors.New("Invalid DataInfo")
+		}
 		switch state {
 		case core.MS_Probe:
 			//assert lock
-			cname, ok = s.parseClientName(host.Name, cname)
-			if !ok {
-				return errors.New("ParseFailed")
-			}
+			cname := clientInfo.GetName()
 			if s.clients != nil {
-				switch count {
-				case -1:
-					for _, data := range s.clients {
-						if data.IsLocked(cname, cdkey) {
-							return errors.New("Lock Failed When Probe")
+				ok := dataInfo.AssertCount(
+					func() bool {
+						for _, data := range s.clients {
+							if data.IsLocked(cname, dataInfo.Key) {
+								return false
+							}
 						}
-					}
-				case 0:
-					if s.worker.IsLocked(cname, cdkey) {
-						return errors.New("Lock Failed When Probe")
-					}
-				case 1:
-					clientData, ok := s.clients[cname]
-					if ok {
-						if clientData.IsLocked(cname, cdkey) {
-							return errors.New("Lock Failed When Probe")
+						return true
+					},
+					func() bool {
+						if s.worker.IsLocked(cname, dataInfo.Key) {
+							return false
 						}
-					}
-				default:
-					errors.New("Client Count")
+						return true
+					},
+					func() bool {
+						clientData, ok := s.clients[cname]
+						if ok {
+							if clientData.IsLocked(cname, dataInfo.Key) {
+								return false
+							}
+						}
+						return true
+					},
+				)
+				if !ok {
+					return errors.New("Lock Failed When Probe")
 				}
-
 			}
 			//send to leader
-			dleader, ok := s.worker.Get("path_leader")
+			nleader, ok := s.worker.GetPath().GetLeaderPath()
 			if !ok {
 				msg.GetInfo().SetState(core.MS_Succeed)
 				s.looper.Push(msg)
 			} else {
-				nleader := core.NodePath(dleader.Data)
 				msg.GetInfo().SetState(core.MS_Ask)
 				err = s.worker.SendToWroker(msg, nleader)
 			}
 		case core.MS_Ask:
-			mypathi, ok := s.worker.Get("path")
-			if ok {
-				mypath := core.NodePath(mypathi.Data)
-				if mypath == hostpath {
-					return nil
-				}
+			mypath := s.worker.GetPath()
+			if mypath == clientInfo.GetPath() {
+				return nil
 			}
-			err = cbAsk(cname, cdkey, cdvalue, hostpath, count)
+			err = cbAsk(clientInfo, dataInfo)
 			if err != nil {
 				return err
 			}
@@ -442,7 +357,7 @@ func (s *scencesrvice) HandleMessages() {
 			if err != nil {
 				return err
 			}
-			err = cbSucceed(cname, cdkey, cdvalue, hostpath, count)
+			err = cbSucceed(clientInfo, dataInfo)
 			if err != nil {
 				if err == __err_Not_Catch_Lock {
 					return nil
@@ -450,9 +365,9 @@ func (s *scencesrvice) HandleMessages() {
 				return err
 			}
 			if s.publicHandlers != nil {
-				handler, ok := s.publicHandlers[action.String()+cdkey]
+				handler, ok := s.publicHandlers[action.String()+dataInfo.Key]
 				if ok {
-					err = handler(cname, cdvalue, hostpath)
+					err = handler(clientInfo, dataInfo)
 				}
 			}
 		case core.MS_Failed:
@@ -470,33 +385,42 @@ func (s *scencesrvice) HandleMessages() {
 	s.looper.AddHandler(3000, core.MA_Lock, func(msg core.Message) (err error) {
 		return broadcast(
 			msg,
-			func(name string, key string, value common.DataItem, hostpath core.NodePath, count int) error {
-				return s.LockClientData(name, key, count)
+			func(cInfo core.ClientInfo, dInfo core.DataInfo) (err error) {
+				return s.LockClientData(cInfo, dInfo)
 			},
-			func(name string, key string, value common.DataItem, hostpath core.NodePath, count int) (err error) {
-
-				switch count {
-				case -1:
-					if !s.lockClientsData(name, key, true) {
-						msg.GetInfo().SetState(core.MS_Failed)
-						s.looper.Push(msg)
-						err = errors.New("Lock Failed When Succeed")
-					}
-				case 0:
-					if !s.worker.Lock(name, key) {
-						msg.GetInfo().SetState(core.MS_Failed)
-						s.looper.Push(msg)
-						err = errors.New("Lock Failed When Succeed")
-					}
-				case 1:
-					if !s.lockClientData(name, key, true) {
-						msg.GetInfo().SetState(core.MS_Failed)
-						s.looper.Push(msg)
-						err = errors.New("Lock Failed When Succeed")
-					}
+			func(cInfo core.ClientInfo, dInfo core.DataInfo) (err error) {
+				ok := dInfo.AssertCount(
+					func() bool {
+						if !s.lockClientsData(cInfo, dInfo, true) {
+							msg.GetInfo().SetState(core.MS_Failed)
+							s.looper.Push(msg)
+							return false
+						}
+						return true
+					},
+					func() bool {
+						if !s.worker.Lock(cInfo.GetName(), dInfo.Key) {
+							msg.GetInfo().SetState(core.MS_Failed)
+							s.looper.Push(msg)
+							return false
+						}
+						return true
+					},
+					func() bool {
+						if !s.lockClientData(cInfo, dInfo, true) {
+							msg.GetInfo().SetState(core.MS_Failed)
+							s.looper.Push(msg)
+							return false
+						}
+						return true
+					},
+				)
+				if !ok {
+					err = errors.New("Lock Failed When Succeed")
+					return
 				}
 
-				ok, err := s.ThatIsMe(name)
+				ok, err = s.ThatIsMe(cInfo.GetName())
 				if err != nil {
 					return
 				}
@@ -510,19 +434,25 @@ func (s *scencesrvice) HandleMessages() {
 	s.looper.AddHandler(3000, core.MA_Unlock, func(msg core.Message) (err error) {
 		return broadcast(
 			msg,
-			func(name string, key string, value common.DataItem, hostpath core.NodePath, count int) error {
-				return s.UnlockClientData(name, key, count)
+			func(cInfo core.ClientInfo, dInfo core.DataInfo) (err error) {
+				return s.UnlockClientData(cInfo, dInfo)
 			},
-			func(name string, key string, value common.DataItem, hostpath core.NodePath, count int) (err error) {
-				switch count {
-				case -1:
-					s.lockClientsData(name, key, false)
-				case 0:
-					s.worker.Unlock(key)
-				case 1:
-					s.lockClientData(name, key, false)
-				}
-				ok, err := s.ThatIsMe(name)
+			func(cInfo core.ClientInfo, dInfo core.DataInfo) (err error) {
+				dInfo.AssertCount(
+					func() bool {
+						s.lockClientsData(cInfo, dInfo, false)
+						return true
+					},
+					func() bool {
+						s.worker.Unlock(dInfo.Key)
+						return true
+					},
+					func() bool {
+						s.lockClientData(cInfo, dInfo, false)
+						return true
+					},
+				)
+				ok, err := s.ThatIsMe(cInfo.GetName())
 				if err != nil {
 					return
 				}
@@ -536,20 +466,26 @@ func (s *scencesrvice) HandleMessages() {
 	s.looper.AddHandler(3000, core.MA_Update, func(msg core.Message) (err error) {
 		return broadcast(
 			msg,
-			func(name string, key string, value common.DataItem, hostpath core.NodePath, count int) error {
-				return s.UpdateClientData(name, key, value, count)
+			func(cInfo core.ClientInfo, dInfo core.DataInfo) error {
+				return s.UpdateClientData(cInfo, dInfo)
 			},
-			func(name string, key string, value common.DataItem, hostpath core.NodePath, count int) error {
-				switch count {
-				case -1:
-					for _, client := range s.clients {
-						client.Set(key, value)
-					}
-				case 0:
-					s.worker.Set(key, value)
-				case 1:
-					s.setClientData(name, key, value)
-				}
+			func(cInfo core.ClientInfo, dInfo core.DataInfo) error {
+				dInfo.AssertCount(
+					func() bool {
+						for _, client := range s.clients {
+							client.Set(dInfo.Key, dInfo.Value)
+						}
+						return true
+					},
+					func() bool {
+						s.worker.Set(dInfo.Key, dInfo.Value)
+						return true
+					},
+					func() bool {
+						s.setClientData(cInfo, dInfo)
+						return true
+					},
+				)
 				return nil
 			},
 		)

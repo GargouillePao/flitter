@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/gargous/flitter/common"
 	"github.com/gargous/flitter/core"
-	saver "github.com/gargous/flitter/save"
+	//saver "github.com/gargous/flitter/save"
 	socketio "github.com/googollee/go-socket.io"
 	"strings"
 	"sync"
@@ -15,21 +15,19 @@ type NameService interface {
 	Service
 }
 type namesrv struct {
-	referee       Referee
-	nameTree      core.NodeTree
-	nameTreeSaver saver.NodeTreeSaver
-	mutex         sync.Mutex
-	bussyness     bool
+	referee   Referee
+	nameTrees map[string]core.NodeTree
+	mutex     sync.Mutex
+	bussyness bool
 	baseService
 }
 
 func NewNameService() NameService {
 	srv := &namesrv{
-		nameTree:  core.NewNodeTree(),
+		nameTrees: make(map[string]core.NodeTree),
 		bussyness: false,
 	}
 	srv.looper = core.NewMessageLooper(__LooperSize)
-	srv.nameTreeSaver = saver.NewNodeTreeSaver(srv.nameTree)
 	return srv
 }
 
@@ -42,32 +40,37 @@ func (n *namesrv) Init(srv interface{}) error {
 func (n *namesrv) SearchNodeInfo(npath core.NodePath) (opath core.NodePath, err error) {
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
-	if n.nameTree == nil {
-		n.nameTree = core.NewNodeTree()
-		n.nameTreeSaver = saver.NewNodeTreeSaver(n.nameTree)
-		n.nameTreeSaver.Load()
-	}
-	info, ok := npath.GetNodeInfo()
-	if !ok {
-		err = errors.New("Invalid NodeInfo When SearchNodeInfo")
+	treeName, ok := npath.GetGroupName()
+	if !ok || treeName == "" {
+		err = errors.New("Group Name Not Exsit")
 		return
 	}
-	opath, ok = n.nameTree.Search(info)
+	tree, ok := n.nameTrees[treeName]
 	if !ok {
-		opath, err = n.nameTree.Add(npath)
+		tree = core.NewNodeTree()
+	}
+	ninfo, ok := npath.GetNodeInfo()
+	if !ok {
+		err = errors.New("Invalid NodeInfo")
+		return
+	}
+	opath, ok = tree.Search(ninfo)
+	if !ok {
+		opath, err = tree.Add(npath)
 		if err != nil {
 			return
 		}
-		//n.nameTreeSaver.SaveLastItem(saver.SA_Add)
 	}
+	n.nameTrees[treeName] = tree
 	return
 }
 func (n *namesrv) SearchNodeInfoWithGroupName(groupname string, index int) core.NodePath {
-	if n.nameTree == nil {
+	tree, ok := n.nameTrees[groupname]
+	if !ok {
 		return ""
 	}
 	_index := 0
-	targetAddress := n.nameTree.FLoopGroup(groupname, func(height int, node core.NodeInfo) bool {
+	targetAddress := tree.FLoopGroup(groupname, func(height int, node core.NodeInfo) bool {
 		if _index == index {
 			return true
 		}
@@ -123,12 +126,17 @@ func (n *namesrv) Term() {
 	n.looper.Term()
 }
 func (n namesrv) String() string {
+	nameTressStr := ""
+	for _, tree := range n.nameTrees {
+		nameTressStr += strings.Join(strings.Split(fmt.Sprintf("%v", tree), "\n"), "\n\t")
+		nameTressStr += "\n"
+	}
 	str := fmt.Sprintf("Name Service:["+
 		"\n\tlooper:%p"+
 		"\n\ttree:%v"+
 		"\n]",
 		n.looper,
-		strings.Join(strings.Split(fmt.Sprintf("%v", n.nameTree), "\n"), "\n\t"),
+		nameTressStr,
 	)
 	return str
 }

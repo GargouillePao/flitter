@@ -79,11 +79,15 @@ func (d *DataItem) Parse(value interface{}) (err error) {
 	return
 }
 func (d *DataItem) Bytes() (buf []byte, err error) {
-	buf = d.buffer.Bytes()
-	if len(buf) > 0 {
-		return
+	if d.buffer != nil {
+		buf = d.buffer.Bytes()
+		if len(buf) > 0 {
+			return
+		}
+		d.buffer.Reset()
+	} else {
+		d.buffer = bytes.NewBuffer(nil)
 	}
-	d.buffer.Reset()
 	ecoder := gob.NewEncoder(d.buffer)
 	err = ecoder.Encode(d)
 	if err != nil {
