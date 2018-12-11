@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+message LoginReq {
+	uint64 udid = 1;
+	string account = 2;
+	string password = 3;
+}
+
+message Role{
+	uint64 id = 1;
+	string name = 2;
+}
+
+message LoginAck {
+	uint64 udid = 1;
+	repeated Role role = 2; 
+}
