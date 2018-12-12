@@ -1,2 +1,1 @@
-# Flitter
-## A Distributed Server Framework
+# Game Imp

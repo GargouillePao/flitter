@@ -3,22 +3,11 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"github.com/tidwall/evio"
+	"github.com/gargous/flitter/core"
+	msgids "github.com/gargous/flitter/share/proto"
+	"github.com/golang/protobuf/proto"
 	"net"
 )
-
-func doServer(errChan chan error) {
-	var events evio.Events
-	events.Data = func(c evio.Conn, in []byte) (out []byte, action evio.Action) {
-		fmt.Println("Client Say", string(in))
-		out = in
-		return
-	}
-	if err := evio.Serve(events, "udp://localhost:8080"); err != nil {
-		errChan <- err
-		return
-	}
-}
 
 func doClient(errChan chan error) {
 	conn, err := net.Dial("udp", "localhost:8080")
@@ -26,18 +15,28 @@ func doClient(errChan chan error) {
 		errChan <- err
 		return
 	}
+	processer := core.NewMsgProcesser()
+	processer.Rejister("PID_LOGIN_REQ", func() proto.Message {
+		return &msgids.LoginReq{}
+	}, nil)
 	r := bufio.NewReader(conn)
 	w := bufio.NewWriter(conn)
 	var buf [1024]byte
 	go func() {
 		for i := 0; i < 10; i++ {
-			send := "Hello"
-			_, err = w.Write([]byte(send))
+			msg := &msgids.LoginReq{
+				Udid:    uint64(i),
+				Account: "xxxx",
+			}
+			id, _ := processer.GetHeadId("PID_LOGIN_REQ")
+			data, _ := processer.Encode(id, msg)
+			_, err = w.Write(data)
 			if err != nil {
 				errChan <- err
 				return
 			}
-			fmt.Println("Send", send)
+			w.Flush()
+			fmt.Println("Send", msg)
 		}
 	}()
 	go func() {
@@ -54,7 +53,6 @@ func doClient(errChan chan error) {
 
 func main() {
 	errChan := make(chan error, 0)
-	go doServer(errChan)
 	go doClient(errChan)
 	err := <-errChan
 	fmt.Println(err)
