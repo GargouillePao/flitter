@@ -1,9 +1,10 @@
 gobuild:
 	go install ./core
+	go install ./fltool
 gotest:
 	go test ./test -v
 proto:
-	protoc --gofast_out=. share/proto/*.proto && go run tool/msggen.go share/proto/msg.json
+	protoc --gofast_out=. share/proto/*.proto && go run tool/msggen.go share/proto/msg.json && go install ./share/proto
 docker:
 	[ "$$(docker ps -a | grep flitter-test)" ] && (echo "rebuild" && docker rm flitter-test -f && docker rmi flitter:v1 -f) || (echo "new build")
 	docker build -t flitter:v1 -f Dockerfile .

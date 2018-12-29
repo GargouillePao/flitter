@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"github.com/gargous/flitter/core"
 	msgids "github.com/gargous/flitter/share/proto"
-	"github.com/golang/protobuf/proto"
-	"github.com/tidwall/evio"
+	"time"
 )
 
 var accounts map[uint64]msgids.Account
@@ -16,30 +15,28 @@ func initFakeAccount() {
 }
 
 func main() {
-	var events evio.Events
-	processer := core.NewMsgProcesser()
-	processer.Rejister("PID_LOGIN_REQ", func() proto.Message {
-		return &msgids.LoginReq{}
-	}, func(msg interface{}) error {
-		pack, ok := msg.(*msgids.LoginReq)
-		if !ok {
-			return errors.New("Assetion Error")
-		}
-		fmt.Println("Client Say", pack)
-		return nil
-	})
-	events.Data = func(c evio.Conn, in []byte) (out []byte, action evio.Action) {
-		fmt.Println(c)
-		err := processer.Process(in)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		return
-	}
-	fmt.Println("Server Start")
-	if err := evio.Serve(events, "udp://localhost:8080", "tcp://localhost:8081"); err != nil {
-		fmt.Println(err)
-		return
-	}
+	prcser := core.NewMsgProcesser()
+	prcser.Rejister(msgids.PID_LOGIN_REQ, msgids.MsgCreators[msgids.PID_LOGIN_REQ],
+		func(d core.Dealer, msg interface{}) error {
+			pack, ok := msg.(*msgids.LoginReq)
+			if !ok {
+				return errors.New("Assetion Error")
+			}
+			fmt.Println("Client Say", pack)
+			roles := make([]*(msgids.Role), 5)
+			for i := 0; i < 5; i++ {
+				roles[i] = &msgids.Role{
+					Id:   uint64(i),
+					Name: "YYY",
+				}
+			}
+			ack := &msgids.LoginAck{
+				Udid:  0,
+				Roles: roles,
+			}
+			d.Send(msgids.PID_LOGIN_ACK, ack)
+			return nil
+		})
+	srv := core.NewServer(prcser, 100000, time.Minute*5)
+	srv.Serve("0.0.0.0:8091")
 }

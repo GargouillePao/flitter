@@ -25,5 +25,5 @@ message Role{
 
 message LoginAck {
 	uint64 udid = 1;
-	repeated Role role = 2; 
+	repeated Role roles = 2; 
 }

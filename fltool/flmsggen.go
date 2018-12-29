@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/dchest/siphash"
 	"io/ioutil"
-	"os"
 	"strings"
 )
 
@@ -15,6 +14,16 @@ func hash(str string) (output uint32) {
 	hd := (h << 32) >> 32
 	output = uint32(hd | hu)
 	return
+}
+
+func appendstr(header string, body map[interface{}]interface{}, format string, footer string) string {
+	outstr := make([]string, 0)
+	outstr = append(outstr, header)
+	for k, v := range body {
+		outstr = append(outstr, fmt.Sprintf(format, k, v))
+	}
+	outstr = append(outstr, footer)
+	return strings.Join(outstr, "\n")
 }
 
 func output(enumHeader string, enumBody map[string]uint32, enumFormat string, enumFooter string, funcHeader string, funcBody map[uint32]string, funcFormat string, funcFooter string, outPath string) {
@@ -32,11 +41,9 @@ func output(enumHeader string, enumBody map[string]uint32, enumFormat string, en
 	ioutil.WriteFile(outPath, []byte(strings.Join(outstr, "\n")), 0777)
 }
 
-func main() {
-	msgPath := os.Args[1]
+func GenMsgs(msgPath string) (err error) {
 	buf, err := ioutil.ReadFile(msgPath)
 	if err != nil {
-		fmt.Println(err)
 		return
 	}
 	msgs := make(map[string]interface{})
@@ -51,39 +58,39 @@ func main() {
 		return
 	}
 	delete(msgs, "package")
-	outmap := make(map[string]uint32)
-	checkmap := make(map[uint32]string)
-	funcmap := make(map[uint32]string)
+	outmap := make(map[interface{}]interface{})
+	checkmap := make(map[interface{}]interface{})
+	funcmap := make(map[interface{}]interface{})
 
 	for k, v := range msgs {
 		ht := hash(k)
 		outmap[k] = ht
 		oldK, ok := checkmap[ht]
 		if ok {
-			fmt.Printf("Same Hash Result Of %s and %s\n", k, oldK)
+			fmt.Printf("Same Hash Result Of %v and %v\n", k, oldK)
 			return
 		}
 		checkmap[ht] = k
-		funcmap[ht] = v.(string)
+		funcmap[ht] = v
 	}
-	output(
-		"package "+pacName.(string)+"\n",
+	gostr := fmt.Sprintf("package %s \nimport \"github.com/golang/protobuf/proto\"\n", pacName)
+	gostr += appendstr(
+		"const(",
 		outmap,
-		"const %s uint32 = %d",
-		"",
-		"var MsgCreator map[uint32]func()interface{} = map[uint32]func()interface{}{",
+		"\t%s uint32 = %d",
+		")\n",
+	)
+	gostr += appendstr(
+		"var MsgCreators map[uint32]func() proto.Message = map[uint32]func() proto.Message {",
 		funcmap,
-		"\t%d : func()interface{} { return &%s{}},",
-		"}",
-		msgPath[0:strings.LastIndex(msgPath, ".")]+".go")
-	output(
-		"namespace "+pacName.(string)+" {",
-		outmap,
-		"\tpublic const int %s = %d;",
-		"",
-		"\tpublic map[] msgCreators = {",
-		funcmap,
-		"\t\t%d : () => &%s{},",
-		"\t}\n}",
-		msgPath[0:strings.LastIndex(msgPath, ".")]+".cs")
+		"\t%d : func()proto.Message { return &%s{}},",
+		"}\n",
+	)
+	gostr += appendstr(
+		"var MsgNames map[uint32] string = map[uint32] string {",
+		checkmap,
+		"\t%d : \"%s\",",
+		"}\n",
+	)
+	return ioutil.WriteFile(msgPath[0:strings.LastIndex(msgPath, ".")]+".go", []byte(gostr), 0777)
 }

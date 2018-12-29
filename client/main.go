@@ -1,59 +1,46 @@
 package main
 
 import (
-	"bufio"
+	"errors"
 	"fmt"
 	"github.com/gargous/flitter/core"
 	msgids "github.com/gargous/flitter/share/proto"
-	"github.com/golang/protobuf/proto"
-	"net"
+	"time"
 )
 
-func doClient(errChan chan error) {
-	conn, err := net.Dial("udp", "localhost:8080")
+func main() {
+	d := core.NewDealer()
+	err := d.Connect("localhost:8091")
 	if err != nil {
-		errChan <- err
-		return
+		fmt.Println(err)
 	}
-	processer := core.NewMsgProcesser()
-	processer.Rejister("PID_LOGIN_REQ", func() proto.Message {
-		return &msgids.LoginReq{}
-	}, nil)
-	r := bufio.NewReader(conn)
-	w := bufio.NewWriter(conn)
-	var buf [1024]byte
+	prcser := core.NewMsgProcesser()
+	prcser.Rejister(msgids.PID_LOGIN_ACK, msgids.MsgCreators[msgids.PID_LOGIN_ACK],
+		func(d core.Dealer, msg interface{}) error {
+			pack, ok := msg.(*msgids.LoginAck)
+			if !ok {
+				return errors.New("Assetion Error")
+			}
+			fmt.Println("Server Say", pack)
+			return nil
+		})
 	go func() {
 		for i := 0; i < 10; i++ {
 			msg := &msgids.LoginReq{
-				Udid:    uint64(i),
+				Udid:    uint64(i + 1),
 				Account: "xxxx",
 			}
-			id, _ := processer.GetHeadId("PID_LOGIN_REQ")
-			data, _ := processer.Encode(id, msg)
-			_, err = w.Write(data)
+			err = d.Send(msgids.PID_LOGIN_REQ, msg)
 			if err != nil {
-				errChan <- err
+				fmt.Println(err)
 				return
 			}
-			w.Flush()
 			fmt.Println("Send", msg)
+			time.Sleep(time.Second)
 		}
 	}()
-	go func() {
-		for i := 0; i < 10; i++ {
-			n, err := r.Read(buf[:])
-			if err != nil {
-				errChan <- err
-				return
-			}
-			fmt.Println("Recv", string(buf[:n]))
-		}
-	}()
-}
-
-func main() {
-	errChan := make(chan error, 0)
-	go doClient(errChan)
-	err := <-errChan
-	fmt.Println(err)
+	err = d.Process(prcser)
+	if err != nil {
+		fmt.Println(err)
+	}
 }
