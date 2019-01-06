@@ -8,6 +8,20 @@ import (
 	"strings"
 )
 
+func readJson(msgPath string) (msgs map[string]interface{}, err error) {
+	buf, err := ioutil.ReadFile(msgPath)
+	if err != nil {
+		return
+	}
+	msgs = make(map[string]interface{})
+	err = json.Unmarshal(buf, &msgs)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	return
+}
+
 func hash(str string) (output uint32) {
 	h := siphash.Hash(0x12340000, 0x00005678, []byte(str))
 	hu := h >> 32

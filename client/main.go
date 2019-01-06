@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/gargous/flitter/core"
+	"github.com/gargous/flitter"
 	msgids "github.com/gargous/flitter/share/proto"
 	"time"
 )

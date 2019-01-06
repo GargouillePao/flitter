@@ -1,0 +1,7 @@
+{
+	"msg":{
+		"package":"msgids",
+		"PID_LOGIN_REQ":"LoginReq",
+		"PID_LOGIN_ACK":"LoginAck"
+	}
+}

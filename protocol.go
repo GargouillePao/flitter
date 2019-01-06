@@ -75,6 +75,7 @@ func (mp *msgProcesser) GetHandler(headId uint32) (h MsgHandler, err error) {
 func (mp *msgProcesser) Process(d Dealer, in []byte) (n int) {
 	n, headId, body, err := DecodeMsg(in)
 	if err != nil {
+		mp.handleErr(d, err)
 		return
 	}
 	handler, err := mp.GetHandler(headId)

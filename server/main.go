@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/gargous/flitter/core"
+	"github.com/gargous/flitter"
 	msgids "github.com/gargous/flitter/share/proto"
 	"time"
 )
@@ -15,9 +15,9 @@ func initFakeAccount() {
 }
 
 func main() {
-	prcser := core.NewMsgProcesser()
+	prcser := flitter.NewMsgProcesser()
 	prcser.Rejister(msgids.PID_LOGIN_REQ, msgids.MsgCreators[msgids.PID_LOGIN_REQ],
-		func(d core.Dealer, msg interface{}) error {
+		func(d flitter.Dealer, msg interface{}) error {
 			pack, ok := msg.(*msgids.LoginReq)
 			if !ok {
 				return errors.New("Assetion Error")

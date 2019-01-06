@@ -6,6 +6,16 @@ import (
 	"os"
 )
 
+func genInit() {
+	os.Mkdir("share", os.ModeDir)
+	os.Mkdir("share/proto", os.ModeDir)
+	os.Mkdir("share/data", os.ModeDir)
+	os.Mkdir("client", os.ModeDir)
+	os.Mkdir("server", os.ModeDir)
+	temps, _ := readJson("template.json")
+	msgs := temps["msg"].(map[string]interface{})
+}
+
 func main() {
 	app := cli.NewApp()
 	app.Name = "fltool"
@@ -16,6 +26,7 @@ func main() {
 			Aliases: []string{"i"},
 			Usage:   "init",
 			Action: func(c *cli.Context) error {
+				genInit()
 				return nil
 			},
 		},
