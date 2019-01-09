@@ -1,0 +1,24 @@
+package internal
+
+import (
+	"_PROJECT_/share/proto/msgids"
+	"github.com/gargous/flitter"
+)
+
+func OnStart(c flitter.Client) {
+	c.Rejister(msgids.PID_LOGIN_REQ, msgids.Creater(msgids.PID_LOGIN_REQ),
+		func(d flitter.Dealer, msg interface{}) error {
+			_, ok := msg.(*msgids.LoginReq)
+			if !ok {
+				return errors.New("Assetion Error")
+			}
+			return nil
+		})
+	c.Invoke("login", "Login type param (0:udid, 1:account pawd)", "login 0 1", func (d flitter.Dealer, params ...string) {
+		
+	})
+}
+
+func OnEnd(err error) {
+
+}

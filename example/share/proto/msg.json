@@ -1,0 +1,5 @@
+{
+	"PID_LOGIN_ACK": "LoginAck",
+	"PID_LOGIN_REQ": "LoginReq",
+	"package": "msgids"
+}

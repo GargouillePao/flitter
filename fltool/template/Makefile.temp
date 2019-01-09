@@ -1,0 +1,6 @@
+gobuild:
+	go install ./client
+proto:
+	protoc --gofast_out=. share/proto/*.proto && fltool msggen && go install ./share/proto
+rt:
+	go run client/app.go

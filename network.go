@@ -1,4 +1,4 @@
-package core
+package flitter
 
 import (
 	"errors"

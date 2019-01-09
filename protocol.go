@@ -1,4 +1,4 @@
-package core
+package flitter
 
 import (
 	"encoding/binary"
@@ -38,7 +38,7 @@ func (mh *msgHandler) handleDirectly(d Dealer, msg interface{}) (err error) {
 }
 
 type MsgProcesser interface {
-	Rejister(headId uint32, getter func() proto.Message, act func(Dealer, interface{}) error)
+	Rejister(headId uint32, act func(Dealer, interface{}) error)
 	GetHandler(headId uint32) (h MsgHandler, err error)
 	handleErr(d Dealer, err error)
 	Process(d Dealer, buf []byte) (n int)
@@ -46,13 +46,15 @@ type MsgProcesser interface {
 
 type msgProcesser struct {
 	handlers map[uint32]MsgHandler
+	creaters map[uint32]func() proto.Message
 }
 
-func NewMsgProcesser() MsgProcesser {
+func NewMsgProcesser(c map[uint32]func() proto.Message) MsgProcesser {
 	mp := &msgProcesser{
 		handlers: make(map[uint32]MsgHandler),
+		creaters: c,
 	}
-	mp.Rejister(MID_INNER_ERROR, nil, func(d Dealer, err interface{}) error {
+	mp.Rejister(MID_INNER_ERROR, func(d Dealer, err interface{}) error {
 		log.Println(d, err)
 		return nil
 	})
@@ -91,10 +93,14 @@ func (mp *msgProcesser) Process(d Dealer, in []byte) (n int) {
 	return
 }
 
-func (mp *msgProcesser) Rejister(headId uint32, getter func() proto.Message, handler func(Dealer, interface{}) error) {
+func (mp *msgProcesser) Rejister(headId uint32, handler func(Dealer, interface{}) error) {
+	creater, ok := mp.creaters[headId]
+	if !ok {
+		creater = nil
+	}
 	mp.handlers[headId] = &msgHandler{
 		handler: handler,
-		getter:  getter,
+		getter:  creater,
 	}
 }
 

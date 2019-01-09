@@ -2,11 +2,21 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/dchest/siphash"
 	"io/ioutil"
+	"os"
 	"strings"
 )
+
+func writeJson(msgPath string, v interface{}) (err error) {
+	data, err := json.MarshalIndent(v, "", "\t")
+	if err != nil {
+		return
+	}
+	return ioutil.WriteFile(msgPath, data, os.ModePerm)
+}
 
 func readJson(msgPath string) (msgs map[string]interface{}, err error) {
 	buf, err := ioutil.ReadFile(msgPath)
@@ -52,7 +62,7 @@ func output(enumHeader string, enumBody map[string]uint32, enumFormat string, en
 		outstr = append(outstr, fmt.Sprintf(funcFormat, k, v))
 	}
 	outstr = append(outstr, funcFooter)
-	ioutil.WriteFile(outPath, []byte(strings.Join(outstr, "\n")), 0777)
+	ioutil.WriteFile(outPath, []byte(strings.Join(outstr, "\n")), os.ModePerm)
 }
 
 func GenMsgs(msgPath string) (err error) {
@@ -63,12 +73,11 @@ func GenMsgs(msgPath string) (err error) {
 	msgs := make(map[string]interface{})
 	err = json.Unmarshal(buf, &msgs)
 	if err != nil {
-		fmt.Println(err)
 		return
 	}
 	pacName, ok := msgs["package"]
 	if !ok {
-		fmt.Printf("Got No Package\n")
+		err = errors.New("Got No Package")
 		return
 	}
 	delete(msgs, "package")
@@ -81,7 +90,7 @@ func GenMsgs(msgPath string) (err error) {
 		outmap[k] = ht
 		oldK, ok := checkmap[ht]
 		if ok {
-			fmt.Printf("Same Hash Result Of %v and %v\n", k, oldK)
+			err = errors.New(fmt.Sprintf("Same Hash Result Of %v and %v\n", k, oldK))
 			return
 		}
 		checkmap[ht] = k
@@ -95,7 +104,7 @@ func GenMsgs(msgPath string) (err error) {
 		")\n",
 	)
 	gostr += appendstr(
-		"var MsgCreators map[uint32]func() proto.Message = map[uint32]func() proto.Message {",
+		"var Creater map[uint32]func() proto.Message = map[uint32]func() proto.Message {",
 		funcmap,
 		"\t%d : func()proto.Message { return &%s{}},",
 		"}\n",
@@ -106,5 +115,5 @@ func GenMsgs(msgPath string) (err error) {
 		"\t%d : \"%s\",",
 		"}\n",
 	)
-	return ioutil.WriteFile(msgPath[0:strings.LastIndex(msgPath, ".")]+".go", []byte(gostr), 0777)
+	return ioutil.WriteFile(msgPath[0:strings.LastIndex(msgPath, ".")]+".go", []byte(gostr), os.ModePerm)
 }
