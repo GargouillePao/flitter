@@ -9,13 +9,6 @@ import (
 	"time"
 )
 
-type Dealer interface {
-	Send(head uint32, body proto.Message) error
-	Connect(address string) error
-	Process(mp MsgProcesser) error
-	Close() error
-}
-
 type bufStream struct {
 	b []byte
 }
@@ -39,12 +32,6 @@ func (bs *bufStream) End(data []byte) {
 	}
 }
 
-func NewDealer() Dealer {
-	return &dealer{
-		bs: &bufStream{},
-	}
-}
-
 func newDealer(conn net.Conn) *dealer {
 	return &dealer{
 		conn: conn,
@@ -54,8 +41,10 @@ func newDealer(conn net.Conn) *dealer {
 
 type dealer struct {
 	s      *server
+	id     uint64
 	conn   net.Conn
 	bs     *bufStream
+	addr   string
 	closed bool
 }
 
@@ -76,8 +65,8 @@ func (d *dealer) Process(mp MsgProcesser) error {
 	}
 }
 
-func (d *dealer) Send(head uint32, body proto.Message) (err error) {
-	data, err := EncodeMsg(head, body)
+func (d *dealer) Send(head uint32, body proto.Message, pack bool) (err error) {
+	data, err := EncodeMsg(head, body, pack)
 	if err != nil {
 		return
 	}
@@ -85,8 +74,15 @@ func (d *dealer) Send(head uint32, body proto.Message) (err error) {
 	return
 }
 
-func (d *dealer) Connect(address string) (err error) {
-	d.conn, err = net.Dial("tcp", address)
+func (d *dealer) Connect() (err error) {
+	if !d.closed {
+		return
+	}
+	d.conn, err = net.Dial("tcp", d.addr)
+	if err != nil {
+		return
+	}
+	d.closed = false
 	return
 }
 
@@ -108,18 +104,22 @@ func (d *dealer) Close() (err error) {
 }
 
 type server struct {
-	ln       net.Listener
-	mp       *msgProcesser
-	readWait time.Duration
-	dealMax  int32
-	dealCnt  int32
+	ln           net.Listener
+	mp           *msgProcesser
+	readWait     time.Duration
+	dealMax      int32
+	dealCnt      int32
+	onconnect    func(*dealer)
+	ondisconnect func(*dealer)
 }
 
-func NewServer(mp MsgProcesser, dealCnt int32, readWait time.Duration) *server {
+func newServer(mp MsgProcesser, dealCnt int32, readWait time.Duration) *server {
 	return &server{
-		readWait: readWait,
-		mp:       mp.(*msgProcesser),
-		dealMax:  dealCnt,
+		readWait:     readWait,
+		mp:           mp.(*msgProcesser),
+		dealMax:      dealCnt,
+		onconnect:    func(d *dealer) {},
+		ondisconnect: func(d *dealer) {},
 	}
 }
 
@@ -144,11 +144,13 @@ func (s *server) Serve(address string) {
 			} else {
 				err = d.conn.SetReadDeadline(time.Now().Add(s.readWait))
 				if err == nil {
+					s.onconnect(d)
 					err = d.Process(s.mp)
 				}
 			}
 			if err != nil {
 				s.mp.handleErr(d, err)
+				s.ondisconnect(d)
 				d.Close()
 			}
 		}()

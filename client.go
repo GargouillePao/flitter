@@ -10,40 +10,46 @@ import (
 
 type Client interface {
 	Start() error
-	Rejister(headId uint32, act func(Dealer, interface{}) error)
-	Invoke(cmd string, desp string, usage string, act func(Dealer, ...string))
+	Register(headId uint32, act func(interface{}) error)
+	Invoke(cmd string, desp string, usage string, act func(...string))
+	Send(head uint32, body proto.Message) error
 }
 
 type cmdHandler struct {
-	cb    func(Dealer, ...string)
+	cb    func(...string)
 	desp  string
 	usage string
 	pri   readline.PrefixCompleterInterface
 }
 
 type client struct {
-	addr string
-	d    Dealer
+	d    *dealer
 	mp   MsgProcesser
 	cmds map[string]cmdHandler
 }
 
 func NewClient(addr string, c map[uint32]func() proto.Message) Client {
-	d := NewDealer()
-	prcser := NewMsgProcesser(c)
+	d := newDealer(nil)
+	d.addr = addr
+	prcser := NewMsgProcesser(c, true)
 	return &client{
-		addr: addr,
 		d:    d,
 		mp:   prcser,
 		cmds: make(map[string]cmdHandler),
 	}
 }
 
-func (c *client) Rejister(headId uint32, act func(Dealer, interface{}) error) {
-	c.mp.Rejister(headId, act)
+func (c *client) Register(headId uint32, act func(interface{}) error) {
+	c.mp.Register(headId, func(d *dealer, msg interface{}) error {
+		return act(msg)
+	})
 }
 
-func (c *client) Invoke(cmd string, desp string, usage string, cb func(Dealer, ...string)) {
+func (c *client) Send(head uint32, body proto.Message) error {
+	return c.d.Send(head, body, true)
+}
+
+func (c *client) Invoke(cmd string, desp string, usage string, cb func(...string)) {
 	c.cmds[cmd] = cmdHandler{
 		pri:   readline.PcItem(cmd),
 		desp:  desp,
@@ -53,7 +59,7 @@ func (c *client) Invoke(cmd string, desp string, usage string, cb func(Dealer, .
 }
 
 func (c *client) Start() (err error) {
-	err = c.d.Connect(c.addr)
+	err = c.d.Connect()
 	if err != nil {
 		return
 	}
@@ -104,7 +110,7 @@ func (c *client) Start() (err error) {
 			cmdItems := strings.Split(cmdName, " ")
 			cmdItem, ok := c.cmds[cmdName]
 			if ok {
-				cmdItem.cb(c.d, cmdItems...)
+				cmdItem.cb(cmdItems...)
 			} else {
 				log.Println("not find cmd")
 			}

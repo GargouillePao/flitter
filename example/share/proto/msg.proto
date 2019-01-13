@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package msgids;
-
-message LoginReq {
-}
-
-message LoginAck {
-}

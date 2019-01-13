@@ -12,17 +12,12 @@ const (
 	MID_INNER_ERROR = 1
 )
 
-type MsgHandler interface {
-	Handle(Dealer, []byte) (err error)
-	handleDirectly(Dealer, interface{}) (err error)
-}
-
 type msgHandler struct {
-	handler func(Dealer, interface{}) error
+	handler func(*dealer, interface{}) error
 	getter  func() proto.Message
 }
 
-func (mh *msgHandler) Handle(d Dealer, body []byte) (err error) {
+func (mh *msgHandler) Handle(d *dealer, body []byte) (err error) {
 	msg := mh.getter()
 	err = proto.Unmarshal(body, msg)
 	if err != nil {
@@ -32,57 +27,49 @@ func (mh *msgHandler) Handle(d Dealer, body []byte) (err error) {
 	return
 }
 
-func (mh *msgHandler) handleDirectly(d Dealer, msg interface{}) (err error) {
+func (mh *msgHandler) handleDirectly(d *dealer, msg interface{}) (err error) {
 	err = mh.handler(d, msg)
 	return
 }
 
 type MsgProcesser interface {
-	Rejister(headId uint32, act func(Dealer, interface{}) error)
-	GetHandler(headId uint32) (h MsgHandler, err error)
-	handleErr(d Dealer, err error)
-	Process(d Dealer, buf []byte) (n int)
+	Register(headId uint32, act func(*dealer, interface{}) error)
+	handleErr(d *dealer, err error)
+	Process(d *dealer, buf []byte) (n int)
 }
 
 type msgProcesser struct {
-	handlers map[uint32]MsgHandler
+	handlers map[uint32]*msgHandler
 	creaters map[uint32]func() proto.Message
+	pack     bool
 }
 
-func NewMsgProcesser(c map[uint32]func() proto.Message) MsgProcesser {
+func NewMsgProcesser(c map[uint32]func() proto.Message, pack bool) MsgProcesser {
 	mp := &msgProcesser{
-		handlers: make(map[uint32]MsgHandler),
+		handlers: make(map[uint32]*msgHandler),
 		creaters: c,
+		pack:     pack,
 	}
-	mp.Rejister(MID_INNER_ERROR, func(d Dealer, err interface{}) error {
+	mp.Register(MID_INNER_ERROR, func(d *dealer, err interface{}) error {
 		log.Println(d, err)
 		return nil
 	})
 	return mp
 }
 
-func (mp *msgProcesser) handleErr(d Dealer, err error) {
+func (mp *msgProcesser) handleErr(d *dealer, err error) {
 	mp.handlers[MID_INNER_ERROR].handleDirectly(d, err)
 }
 
-func (mp *msgProcesser) GetHandler(headId uint32) (h MsgHandler, err error) {
-	h, ok := mp.handlers[headId]
+func (mp *msgProcesser) Process(d *dealer, in []byte) (n int) {
+	n, headId, body, err := DecodeMsg(in, mp.pack)
+	if err != nil {
+		mp.handleErr(d, err)
+		return
+	}
+	handler, ok := mp.handlers[headId]
 	if !ok {
-		err = errors.New(fmt.Sprintf("headid[%d] not rejistered", headId))
-		return
-	}
-	return
-}
-
-func (mp *msgProcesser) Process(d Dealer, in []byte) (n int) {
-	n, headId, body, err := DecodeMsg(in)
-	if err != nil {
-		mp.handleErr(d, err)
-		return
-	}
-	handler, err := mp.GetHandler(headId)
-	if err != nil {
-		mp.handleErr(d, err)
+		mp.handleErr(d, errors.New(fmt.Sprintf("Handler %d Not Register", headId)))
 		return
 	}
 	err = handler.Handle(d, body)
@@ -93,7 +80,7 @@ func (mp *msgProcesser) Process(d Dealer, in []byte) (n int) {
 	return
 }
 
-func (mp *msgProcesser) Rejister(headId uint32, handler func(Dealer, interface{}) error) {
+func (mp *msgProcesser) Register(headId uint32, handler func(*dealer, interface{}) error) {
 	creater, ok := mp.creaters[headId]
 	if !ok {
 		creater = nil
@@ -104,7 +91,7 @@ func (mp *msgProcesser) Rejister(headId uint32, handler func(Dealer, interface{}
 	}
 }
 
-func DecodeMsg(inp []byte) (n int, head uint32, data []byte, err error) {
+func DecodeMsg(inp []byte, pack bool) (n int, head uint32, data []byte, err error) {
 	inpLen := len(inp)
 	offset := 0
 	if inpLen < offset+4 {
@@ -129,7 +116,7 @@ func DecodeMsg(inp []byte) (n int, head uint32, data []byte, err error) {
 	return
 }
 
-func EncodeMsg(head uint32, body proto.Message) (oup []byte, err error) {
+func EncodeMsg(head uint32, body proto.Message, pack bool) (oup []byte, err error) {
 	oup = make([]byte, 8)
 	offset := 0
 	binary.BigEndian.PutUint32(oup[offset:offset+4], head)

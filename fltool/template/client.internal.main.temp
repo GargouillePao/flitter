@@ -1,12 +1,14 @@
 package internal
 
 import (
-	"_PROJECT_/share/proto/msgids"
+	msgids "_PROJECT_/share/proto"
 	"github.com/gargous/flitter"
+	"errors"
+	"log"
 )
 
 func OnStart(c flitter.Client) {
-	c.Rejister(msgids.PID_LOGIN_REQ, msgids.Creater(msgids.PID_LOGIN_REQ),
+	c.Rejister(msgids.PID_LOGIN_REQ,
 		func(d flitter.Dealer, msg interface{}) error {
 			_, ok := msg.(*msgids.LoginReq)
 			if !ok {
@@ -20,5 +22,5 @@ func OnStart(c flitter.Client) {
 }
 
 func OnEnd(err error) {
-
+	log.Println(err)
 }

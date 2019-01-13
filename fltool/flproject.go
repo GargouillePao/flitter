@@ -8,129 +8,72 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
-func clearInit() {
-	os.RemoveAll("share")
-	os.RemoveAll("client")
-	os.RemoveAll("server")
-}
-
-func genClient() (err error) {
-	err = os.Mkdir("client", os.ModePerm)
+func genFileWithTemp(projectName, inFilePath, inFileName, extName string) (err error) {
+	inBuff, err := ioutil.ReadFile(filepath.Join(inFilePath, inFileName))
 	if err != nil {
 		return
 	}
-	err = os.Mkdir("client/internal", os.ModePerm)
-	if err != nil {
+	if filepath.Ext(inFileName) != ".temp" {
+		err = errors.New("Invalid File With Ext " + filepath.Ext(inFileName))
 		return
 	}
-	err = ioutil.WriteFile("client/app.go", []byte(`
-package main
-
-import (
-	"../internal"
-)
-
-func main() {
-	internal.Start()
-}
-	`), os.ModePerm)
-	if err != nil {
-		return
+	seps := strings.Split(inFileName, ".")
+	seps = append([]string{projectName}, seps...)
+	relName := filepath.Join(seps[:len(seps)-1]...) + extName
+	pathN := seps[0]
+	for i := 1; i < len(seps)-1; i++ {
+		os.Mkdir(pathN, os.ModePerm)
+		log.Println("Mkdir", pathN)
+		pathN = filepath.Join(pathN, seps[i])
 	}
-	err = ioutil.WriteFile("client/internal/main.go", []byte(`
-package internal
-
-import (
-	"github.com/gargous/flitter"
-	"log"
-)
-
-var cli flitter.Client
-
-func init() {
-	cli = flitter.NewClient("127.0.0.1:8080")
-}
-
-func Start() {
-	err := cli.Start()
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-	`), os.ModePerm)
+	inBuff = []byte(strings.Replace(string(inBuff), "_PROJECT_", projectName, -1))
+	inBuff = []byte(strings.Replace(string(inBuff), "_RT_", projectName, -1))
+	err = ioutil.WriteFile(relName, inBuff, os.ModePerm)
 	return
 }
 
-func genInit() (err error) {
-	err = os.Mkdir("share", os.ModePerm)
+func genInit(projectName string) (err error) {
+	if projectName == "" {
+		err = errors.New("No Project Name")
+		return
+	}
+	rootPath := filepath.Join(os.Getenv("GOPATH"), "src", "github.com", "gargous", "flitter", "fltool", "template")
+	err = genFileWithTemp(projectName, rootPath, "client.app.temp", ".go")
 	if err != nil {
 		return
 	}
-	err = os.Mkdir("share/proto", os.ModePerm)
+	err = genFileWithTemp(projectName, rootPath, "client.internal.main.temp", ".go")
 	if err != nil {
 		return
 	}
-	err = os.Mkdir("share/data", os.ModePerm)
+	err = genFileWithTemp(projectName, rootPath, "Makefile.temp", "")
 	if err != nil {
 		return
 	}
-	err = genClient()
+	err = genFileWithTemp(projectName, rootPath, "share.proto.msgn.temp", ".json")
 	if err != nil {
 		return
 	}
-	err = os.Mkdir("server", os.ModePerm)
+	err = genFileWithTemp(projectName, rootPath, "share.proto.msgs.temp", ".proto")
 	if err != nil {
 		return
 	}
-	temps, err := readJson(os.Getenv("GOPATH") + "/src/github.com/gargous/flitter/fltool/template.json")
-	if err != nil {
-		return
-	}
-	msgs := temps["msg"]
-	msgDic := msgs.(map[string]interface{})
-	err = writeJson("share/proto/msg.json", msgs)
-	if err != nil {
-		return
-	}
-	pbf, err := os.Create("share/proto/msg.proto")
-	if err != nil {
-		return
-	}
-	packName := msgDic["package"]
-	delete(msgDic, "package")
-	pbStrs := make([]string, 0)
-	pbStrs = append(pbStrs, "syntax = \"proto3\";")
-	pbStrs = append(pbStrs, fmt.Sprintf("package %v;", packName))
-	for _, v := range msgDic {
-		pbStrs = append(pbStrs, fmt.Sprintf("message %v {\n}", v))
-	}
-	_, err = pbf.WriteString(strings.Join(pbStrs, "\n\n"))
-	if err != nil {
-		return
-	}
+	err = genMsgGen(projectName)
 	return
 }
 
-func genMsgGen() (err error) {
-	err = runCmd("protoc --gofast_out=. ./share/proto/*.proto")
+func genMsgGen(projectName string) (err error) {
+	cmd := exec.Command("sh", "-c", "protoc --gofast_out=. "+projectName+"/share/proto/*.proto")
+	buf, err := cmd.Output()
 	if err != nil {
-		return
+		return errors.New(fmt.Sprintf("%v:%s", err, string(buf)))
 	}
-	err = GenMsgs("./share/proto/msg.json")
-	return
-}
-
-func runCmd(cmdstr string) (err error) {
-	log.Println("Run", cmdstr)
-	cmd := exec.Command("sh", "-c", cmdstr)
-	outp, err := cmd.CombinedOutput()
-	if err != nil {
-		err = errors.New(fmt.Sprintf("%v:%s", err, outp))
-		return
-	}
+	log.Println(string(buf))
+	err = GenMsgs(projectName + "/share/proto/msgn.json")
 	return
 }
 
@@ -143,26 +86,8 @@ func main() {
 			Name:    "init",
 			Aliases: []string{"i"},
 			Usage:   "make init",
-			Flags: []cli.Flag{
-				cli.BoolFlag{
-					Name:  "f",
-					Usage: "-f",
-				},
-			},
 			Action: func(c *cli.Context) error {
-				if c.Bool("f") {
-					clearInit()
-				}
-				return genInit()
-			},
-		},
-		{
-			Name:    "new",
-			Aliases: []string{"n"},
-			Usage:   "make new [app name]",
-			Action: func(c *cli.Context) error {
-				log.Println(c.Args()[0])
-				return nil
+				return genInit(c.Args().First())
 			},
 		},
 		{
@@ -170,15 +95,7 @@ func main() {
 			Aliases: []string{"mg"},
 			Usage:   "make msggen [msg path]",
 			Action: func(c *cli.Context) error {
-				return genMsgGen()
-			},
-		},
-		{
-			Name:    "robot",
-			Aliases: []string{"rt"},
-			Usage:   "make rt",
-			Action: func(c *cli.Context) error {
-				return runCmd("go run client/app.go")
+				return genMsgGen("")
 			},
 		},
 	}

@@ -1,0 +1,27 @@
+package main
+
+import (
+	"_PROJECT_/client/internal"
+	msgids "_PROJECT_/share/proto"
+	"github.com/gargous/flitter"
+	"os"
+	"strings"
+)
+
+var cli flitter.Client
+
+func init() {
+	addr := ""
+	if len(os.Args) <= 1 {
+		addr = "local"
+	} else {
+		addr = os.Args[1]
+	}
+	raddr := os.Getenv("_RT__ADDR_" + strings.ToUpper(addr))
+	cli = flitter.NewClient(raddr, msgids.Creater)
+}
+
+func main() {
+	internal.OnStart(cli)
+	internal.OnEnd(cli.Start())
+}

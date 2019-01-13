@@ -1,6 +1,11 @@
+export _RT__ADDR_LOCAL=127.0.0.1:8080
+export _RT__ADDR_ALPHA=127.0.0.1:8080
+export _RT__ADDR_BETA=127.0.0.1:8080
+export _RT__ADDR_GOLD=127.0.0.1:8080
+
 gobuild:
 	go install ./client
 proto:
 	protoc --gofast_out=. share/proto/*.proto && fltool msggen && go install ./share/proto
 rt:
-	go run client/app.go
+	go run client/app.go $(HOST)
