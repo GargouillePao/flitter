@@ -24,7 +24,7 @@ type agentConn struct {
 }
 
 func (ac *agentConn) Reply(head uint32, body proto.Message) error {
-	return ac.d.Send(head, body, true)
+	return ac.d.Send(head, body, false)
 }
 
 func (ac *agentConn) Close() error {
@@ -41,6 +41,14 @@ func (ac *agentConn) SetID(id uint64) {
 
 func (ac *agentConn) ID() uint64 {
 	return ac.id
+}
+
+type clientAgentConn struct {
+	agentConn
+}
+
+func (cac *clientAgentConn) Reply(head uint32, body proto.Message) error {
+	return cac.d.Send(head, body, true)
 }
 
 type Agent interface {
@@ -104,5 +112,43 @@ func (a *agent) Send(tokenID uint64, head uint32, body proto.Message) (err error
 		return
 	}
 	err = c.(AgentConn).Reply(head, body)
+	return
+}
+
+type clientAgent struct {
+	agent
+}
+
+func NewClientAgent(addr string, c map[uint32]func() proto.Message, dealCnt int32, clientWait time.Duration, serverWait time.Duration) Agent {
+	prcser := NewMsgProcesser(c, true)
+	ag := &clientAgent{
+		agent: agent{
+			addr:   addr,
+			server: newServer(prcser, dealCnt, clientWait, serverWait),
+		},
+	}
+	return ag
+}
+
+func (a *clientAgent) Start() {
+	a.onconnect = func(d *dealer) {
+		for i := 0; i < 20; i++ {
+			tokenID := rand.Uint64()
+			if _, ok := a.clients.Load(tokenID); !ok {
+				d.id = tokenID
+				break
+			}
+		}
+		a.clients.Store(d.id, AgentConn(&clientAgentConn{
+			agentConn: agentConn{
+				d:     d,
+				token: d.id,
+			},
+		}))
+	}
+	a.ondisconnect = func(d *dealer) {
+		a.clients.Delete(d.id)
+	}
+	a.serve(a.addr)
 	return
 }
