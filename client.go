@@ -83,8 +83,9 @@ func (c *client) Start() (err error) {
 	if err != nil {
 		return
 	}
+	c.d.mp = c.mp
 	go func() {
-		err = c.d.Process(c.mp)
+		err = c.d.Process()
 	}()
 	for {
 		line, err := l.Readline()

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -44,93 +45,64 @@ func (ac *agentConn) ID() uint64 {
 
 type Agent interface {
 	Start()
-	To(peer string, head uint32, body proto.Message) error
+	SendPeer(peer string, head uint32, body proto.Message) error
 	Send(tokenID uint64, head uint32, body proto.Message) error
 	Register(headId uint32, act func(AgentConn, interface{}) error)
-	AddPeer(name, addr string, mp MsgProcesser)
+	AddPeer(name, addr string, mp MsgProcesser) error
 }
 
 type agent struct {
 	addr    string
-	ds      map[string]*dealer
-	clients map[uint64]*agentConn
-	srv     *server
+	clients sync.Map
+	server
 }
 
-func NewAgent(addr string, c map[uint32]func() proto.Message, dealCnt int32, readWait time.Duration) Agent {
+func NewAgent(addr string, c map[uint32]func() proto.Message, dealCnt int32, clientWait time.Duration, serverWait time.Duration) Agent {
 	prcser := NewMsgProcesser(c, true)
-	return &agent{
-		addr:    addr,
-		ds:      make(map[string]*dealer),
-		clients: make(map[uint64]*agentConn),
-		srv:     newServer(prcser, dealCnt, readWait),
+	ag := &agent{
+		addr:   addr,
+		server: newServer(prcser, dealCnt, clientWait, serverWait),
 	}
-}
-
-func (a *agent) AddPeer(name, addr string, mp MsgProcesser) {
-	d := newDealer(nil)
-	d.addr = addr
-	go func() {
-		err := d.Process(mp)
-		if err != nil {
-			a.srv.mp.handleErr(d, err)
-		}
-	}()
-	a.ds[name] = d
-	return
+	return ag
 }
 
 func (a *agent) Register(headId uint32, act func(AgentConn, interface{}) error) {
-	a.srv.mp.Register(headId, func(d *dealer, msg interface{}) error {
-		conn, ok := a.clients[d.id]
+	a.mp.Register(headId, func(d *dealer, msg interface{}) error {
+		conn, ok := a.clients.Load(d.id)
 		if !ok {
 			return errors.New(fmt.Sprintf("Dealer %d Not Linked With AgentConn", d.id))
 		}
-		return act(conn, msg)
+		return act(conn.(AgentConn), msg)
 	})
 }
 
 func (a *agent) Start() {
-	a.srv.onconnect = func(d *dealer) {
+	a.onconnect = func(d *dealer) {
 		for i := 0; i < 20; i++ {
 			tokenID := rand.Uint64()
-			if _, ok := a.clients[tokenID]; !ok {
+			if _, ok := a.clients.Load(tokenID); !ok {
 				d.id = tokenID
 				break
 			}
 		}
-		a.clients[d.id] = &agentConn{
+		a.clients.Store(d.id, AgentConn(&agentConn{
 			d:     d,
 			token: d.id,
-		}
+		}))
 	}
-	a.srv.ondisconnect = func(d *dealer) {
-		a.clients[d.id] = nil
+	a.ondisconnect = func(d *dealer) {
+		a.clients.Delete(d.id)
 	}
-	a.srv.Serve(a.addr)
-	return
-}
-
-func (a *agent) To(peer string, head uint32, body proto.Message) (err error) {
-	d, ok := a.ds[peer]
-	if !ok {
-		err = errors.New(fmt.Sprintf("Peer %s Not Found", peer))
-		return
-	}
-	err = d.Connect()
-	if err != nil {
-		return
-	}
-	err = d.Send(head, body, false)
+	a.serve(a.addr)
 	return
 }
 
 func (a *agent) Send(tokenID uint64, head uint32, body proto.Message) (err error) {
-	c, ok := a.clients[tokenID]
+	c, ok := a.clients.Load(tokenID)
 	if !ok {
 		err = errors.New(fmt.Sprintf("Client %d Not Find ", tokenID))
 		return
 	}
-	err = c.d.Send(head, body, true)
+	err = c.(AgentConn).Reply(head, body)
 	return
 }
