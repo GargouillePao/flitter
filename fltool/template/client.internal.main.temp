@@ -8,15 +8,15 @@ import (
 )
 
 func OnStart(c flitter.Client) {
-	c.Rejister(msgids.PID_LOGIN_REQ,
-		func(d flitter.Dealer, msg interface{}) error {
+	c.Register(msgids.PID_LOGIN_REQ,
+		func(msg interface{}) error {
 			_, ok := msg.(*msgids.LoginReq)
 			if !ok {
 				return errors.New("Assetion Error")
 			}
 			return nil
 		})
-	c.Invoke("login", "Login type param (0:udid, 1:account pawd)", "login 0 1", func (d flitter.Dealer, params ...string) {
+	c.Invoke("login", "Login type param (0:udid, 1:account pawd)", "login 0 1", func (params ...string) {
 		
 	})
 }

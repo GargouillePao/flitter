@@ -1,0 +1,21 @@
+package internal
+
+import (
+	msgids "_PROJECT_/share/proto"
+	"github.com/gargous/flitter"
+	"errors"
+)
+
+func OnStart(a flitter.Agent) {
+	a.Register(msgids.PID_LOGIN_REQ,
+		func(ac flitter.AgentConn, msg interface{}) error {
+			_, ok := msg.(*msgids.LoginReq)
+			if !ok {
+				return errors.New("Assetion Error")
+			}
+			return nil
+		})
+}
+
+func OnEnd() {
+}

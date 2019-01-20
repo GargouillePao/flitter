@@ -31,7 +31,6 @@ func genFileWithTemp(projectName, inFilePath, inFileName, extName string) (err e
 		pathN = filepath.Join(pathN, seps[i])
 	}
 	inBuff = []byte(strings.Replace(string(inBuff), "_PROJECT_", projectName, -1))
-	inBuff = []byte(strings.Replace(string(inBuff), "_RT_", projectName, -1))
 	err = ioutil.WriteFile(relName, inBuff, os.ModePerm)
 	return
 }
@@ -47,6 +46,22 @@ func genInit(projectName string) (err error) {
 		return
 	}
 	err = genFileWithTemp(projectName, rootPath, "client.internal.main.temp", ".go")
+	if err != nil {
+		return
+	}
+	err = genFileWithTemp(projectName, rootPath, "agent.app.temp", ".go")
+	if err != nil {
+		return
+	}
+	err = genFileWithTemp(projectName, rootPath, "agent.internal.main.temp", ".go")
+	if err != nil {
+		return
+	}
+	err = genFileWithTemp(projectName, rootPath, "game.app.temp", ".go")
+	if err != nil {
+		return
+	}
+	err = genFileWithTemp(projectName, rootPath, "game.internal.main.temp", ".go")
 	if err != nil {
 		return
 	}

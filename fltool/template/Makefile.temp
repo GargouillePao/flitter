@@ -1,11 +1,24 @@
-export _RT__ADDR_LOCAL=127.0.0.1:8080
-export _RT__ADDR_ALPHA=127.0.0.1:8080
-export _RT__ADDR_BETA=127.0.0.1:8080
-export _RT__ADDR_GOLD=127.0.0.1:8080
+export _PROJECT__AGENTA_LOCAL = 127.0.0.1:8080
+export _PROJECT__AGENTA_BETA = 127.0.0.1:8080
+export _PROJECT__GAMEA_LOCAL = 0.0.0.0:8082
+export _PROJECT__GAMEA_BETA = 0.0.0.0:8082
+gobuild:
+	go install ./client ./agent ./game
+export _PROJECT__AGENTA_LOCAL = 127.0.0.1:8080
+export _PROJECT__AGENTA_BETA = 127.0.0.1:8080
+export _PROJECT__GAMEA_LOCAL = 0.0.0.0:8082
+export _PROJECT__GAMEA_BETA = 0.0.0.0:8082
 
 gobuild:
-	go install ./client
+	go build -o ./client.out ./client
+	go build -o ./agent.out ./agent
+	go build -o ./game.out ./game
+
 proto:
 	protoc --gofast_out=. share/proto/*.proto && fltool msggen && go install ./share/proto
 rt:
 	go run client/app.go $(HOST)
+a1:
+	go run agent/app.go $(HOST)
+g1:
+	go run game/app.go $(HOST)

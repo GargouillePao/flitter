@@ -102,7 +102,6 @@ func (a *agent) Start() {
 		a.clients.Delete(d.id)
 	}
 	a.serve(a.addr)
-	return
 }
 
 func (a *agent) Send(tokenID uint64, head uint32, body proto.Message) (err error) {

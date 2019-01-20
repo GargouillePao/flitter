@@ -1,14 +1,15 @@
 package main
 
 import (
-	"_PROJECT_/client/internal"
+	"_PROJECT_/agent/internal"
 	msgids "_PROJECT_/share/proto"
 	"github.com/gargous/flitter"
 	"os"
 	"strings"
+	"time"
 )
 
-var cli flitter.Client
+var agt flitter.Agent
 
 func init() {
 	addr := ""
@@ -18,10 +19,11 @@ func init() {
 		addr = os.Args[1]
 	}
 	raddr := os.Getenv("_PROJECT__AGENTA_" + strings.ToUpper(addr))
-	cli = flitter.NewClient(raddr, msgids.Creater)
+	agt = flitter.NewClientAgent(raddr, msgids.Creater, 5000, time.Minute*5, time.Minute*10)
 }
 
 func main() {
-	internal.OnStart(cli)
-	internal.OnEnd(cli.Start())
+	internal.OnStart(agt)
+	agt.Start()
+	internal.OnEnd()
 }

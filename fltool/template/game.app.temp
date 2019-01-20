@@ -1,0 +1,29 @@
+package main
+
+import (
+	"_PROJECT_/game/internal"
+	msgids "_PROJECT_/share/proto"
+	"github.com/gargous/flitter"
+	"os"
+	"strings"
+	"time"
+)
+
+var agt flitter.Agent
+
+func init() {
+	addr := ""
+	if len(os.Args) <= 1 {
+		addr = "local"
+	} else {
+		addr = os.Args[1]
+	}
+	raddr := os.Getenv("_PROJECT__GAMEA_" + strings.ToUpper(addr))
+	agt = flitter.NewAgent(raddr, msgids.Creater, 5000, time.Minute*5, time.Minute*10)
+}
+
+func main() {
+	internal.OnStart(agt)
+	agt.Start()
+	internal.OnEnd()
+}
