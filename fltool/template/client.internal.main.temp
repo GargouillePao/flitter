@@ -16,7 +16,7 @@ func OnStart(c flitter.Client) {
 			}
 			return nil
 		})
-	c.Invoke("login", "Login type param (0:udid, 1:account pawd)", "login 0 1", func (params ...string) {
+	c.Invoke("login", "Login type param (0:udid, 1:account pawd)", "login 0 1", func (params ...string) (err error) {
 		
 	})
 }

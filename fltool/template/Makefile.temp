@@ -2,12 +2,6 @@ export _PROJECT__AGENTA_LOCAL = 127.0.0.1:8080
 export _PROJECT__AGENTA_BETA = 127.0.0.1:8080
 export _PROJECT__GAMEA_LOCAL = 0.0.0.0:8082
 export _PROJECT__GAMEA_BETA = 0.0.0.0:8082
-gobuild:
-	go install ./client ./agent ./game
-export _PROJECT__AGENTA_LOCAL = 127.0.0.1:8080
-export _PROJECT__AGENTA_BETA = 127.0.0.1:8080
-export _PROJECT__GAMEA_LOCAL = 0.0.0.0:8082
-export _PROJECT__GAMEA_BETA = 0.0.0.0:8082
 
 gobuild:
 	go build -o ./client.out ./client

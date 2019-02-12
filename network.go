@@ -42,14 +42,13 @@ func newDealer(conn net.Conn) *dealer {
 }
 
 type dealer struct {
-	s      *server
-	id     uint64
-	conn   net.Conn
-	rbs    *bufStream
-	wbs    *bufStream
-	addr   string
-	closed bool
-	mp     MsgProcesser
+	s    *server
+	id   uint64
+	conn net.Conn
+	rbs  *bufStream
+	wbs  *bufStream
+	addr string
+	mp   MsgProcesser
 }
 
 func (d *dealer) String() string {
@@ -84,14 +83,13 @@ func (d *dealer) Send(head uint32, body proto.Message, pack bool) (err error) {
 }
 
 func (d *dealer) Connect() (err error) {
-	if !d.closed {
+	if d.conn != nil {
 		return
 	}
 	d.conn, err = net.Dial("tcp", d.addr)
 	if err != nil {
 		return
 	}
-	d.closed = false
 	return
 }
 
@@ -102,11 +100,11 @@ func (d *dealer) setServer(s *server) {
 }
 
 func (d *dealer) Close() (err error) {
-	if d.closed {
+	if d.conn == nil {
 		return
 	}
-	d.closed = true
 	d.conn.Close()
+	d.conn = nil
 	if d.s != nil {
 		atomic.AddInt32(&d.s.dealCnt, -1)
 	}
@@ -191,11 +189,9 @@ func (s *server) serve(address string) {
 				}
 				if err != nil {
 					s.mp.handleErr(d, err)
-					if err, ok := err.(net.Error); ok && err.Timeout() {
-						s.ondisconnect(d)
-						d.Close()
-						return
-					}
+					s.ondisconnect(d)
+					d.Close()
+					return
 				}
 			}
 		}()

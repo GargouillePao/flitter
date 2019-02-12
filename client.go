@@ -5,18 +5,19 @@ import (
 	"github.com/golang/protobuf/proto"
 	"io"
 	"log"
+	"os"
 	"strings"
 )
 
 type Client interface {
 	Start() error
 	Register(headId uint32, act func(interface{}) error)
-	Invoke(cmd string, desp string, usage string, act func(...string))
+	Invoke(cmd string, desp string, usage string, act func(...string) error)
 	Send(head uint32, body proto.Message) error
 }
 
 type cmdHandler struct {
-	cb    func(...string)
+	cb    func(...string) error
 	desp  string
 	usage string
 	pri   readline.PrefixCompleterInterface
@@ -49,7 +50,7 @@ func (c *client) Send(head uint32, body proto.Message) error {
 	return c.d.Send(head, body, true)
 }
 
-func (c *client) Invoke(cmd string, desp string, usage string, cb func(...string)) {
+func (c *client) Invoke(cmd string, desp string, usage string, cb func(...string) error) {
 	c.cmds[cmd] = cmdHandler{
 		pri:   readline.PcItem(cmd),
 		desp:  desp,
@@ -79,6 +80,7 @@ func (c *client) Start() (err error) {
 		Prompt:          "\033[31m»\033[0m ",
 		AutoComplete:    completer,
 		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
 	})
 	if err != nil {
 		return
@@ -86,10 +88,20 @@ func (c *client) Start() (err error) {
 	c.d.mp = c.mp
 	go func() {
 		err = c.d.Process()
+		if err != nil {
+			c.d.mp.handleErr(c.d, err)
+			os.Exit(0)
+		}
 	}()
 	for {
 		line, err := l.Readline()
-		if err == io.EOF {
+		if err == readline.ErrInterrupt {
+			if len(line) == 0 {
+				break
+			} else {
+				continue
+			}
+		} else if err == io.EOF {
 			break
 		}
 		line = strings.TrimSpace(line)
@@ -109,9 +121,16 @@ func (c *client) Start() (err error) {
 		default:
 			cmdName := strings.TrimSpace(line)
 			cmdItems := strings.Split(cmdName, " ")
-			cmdItem, ok := c.cmds[cmdName]
+			if len(cmdItems) <= 0 {
+				log.Println("not find cmd")
+				continue
+			}
+			cmdItem, ok := c.cmds[cmdItems[0]]
 			if ok {
-				cmdItem.cb(cmdItems...)
+				err := cmdItem.cb(cmdItems...)
+				if err != nil {
+					log.Println(err)
+				}
 			} else {
 				log.Println("not find cmd")
 			}

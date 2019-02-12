@@ -57,6 +57,7 @@ type Agent interface {
 	Send(tokenID uint64, head uint32, body proto.Message) error
 	Register(headId uint32, act func(AgentConn, interface{}) error)
 	AddPeer(name, addr string, mp MsgProcesser) error
+	GetConn(id uint64) AgentConn
 }
 
 type agent struct {
@@ -105,12 +106,24 @@ func (a *agent) Start() {
 }
 
 func (a *agent) Send(tokenID uint64, head uint32, body proto.Message) (err error) {
-	c, ok := a.clients.Load(tokenID)
-	if !ok {
+	c := a.GetConn(tokenID)
+	if c == nil {
 		err = errors.New(fmt.Sprintf("Client %d Not Find ", tokenID))
 		return
 	}
-	err = c.(AgentConn).Reply(head, body)
+	err = c.Reply(head, body)
+	return
+}
+
+func (a *agent) GetConn(tokenID uint64) (ac AgentConn) {
+	c, ok := a.clients.Load(tokenID)
+	if !ok {
+		return
+	}
+	ac, ok = c.(AgentConn)
+	if !ok {
+		return
+	}
 	return
 }
 
