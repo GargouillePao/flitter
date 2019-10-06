@@ -66,15 +66,29 @@ type MongoSessParam struct {
 	URL string
 }
 
+type MongoSessInfo struct {
+	s *mgo.Session
+	c *mgo.Collection
+}
+
 type ManagerParam struct {
 	TokenLength  int
 	MongoRole    MongoSessParam
 	MongoAccount MongoSessParam
 }
 
-type MongoSessInfo struct {
-	s *mgo.Session
-	c *mgo.Collection
+var DefaultParam = func(db string) ManagerParam {
+	return ManagerParam{
+		TokenLength: 16,
+		MongoRole: MongoSessParam{
+			C:   "role",
+			URL: "mongodb://127.0.0.1:27017/" + db,
+		},
+		MongoAccount: MongoSessParam{
+			C:   "account",
+			URL: "mongodb://127.0.0.1:27017/" + db,
+		},
+	}
 }
 
 type Manager struct {
@@ -87,9 +101,14 @@ type Manager struct {
 }
 
 func NewManager(param ManagerParam) *Manager {
-	return &Manager{
+	m := &Manager{
 		param: param,
 	}
+	if m.param.MongoAccount.C == _EmptyString {
+		m.param.MongoAccount.C = "account"
+	}
+
+	return m
 }
 
 func (m *Manager) dialMongo(url string, cname string) (s *mgo.Session, c *mgo.Collection, err error) {
