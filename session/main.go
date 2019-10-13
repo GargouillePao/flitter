@@ -4,13 +4,11 @@ import (
 	"errors"
 	"math/rand"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
 )
 
 const _EmptyString string = ""
@@ -32,8 +30,7 @@ type LoginInfo struct {
 
 func (l *LoginInfo) setIdFromRole() {
 	idField := reflect.ValueOf(l.Role).FieldByName("Id")
-	id := uint32(idField.Uint())
-	l.id = id
+	l.id = uint32(idField.Uint())
 }
 
 func (l *LoginInfo) setIdToRole() {
@@ -45,6 +42,8 @@ type Session struct {
 	info     LoginInfo
 	expireAt time.Time
 	tokenLen int
+	login    bool
+	m        *Manager
 }
 
 func (s *Session) UpdateToken() {
@@ -59,6 +58,32 @@ func (s *Session) UpdateToken() {
 func (s *Session) hasExpired(info LoginInfo) bool {
 	return s.info.Token != info.Token ||
 		s.expireAt.Before(time.Now())
+}
+
+func (s *Session) Login() error {
+	if s.info.Visit {
+		s.login = true
+		return nil
+	} else {
+		err := s.m.validateAccount(s.info)
+		if err != nil {
+			return err
+		}
+		s.login = true
+		return nil
+	}
+}
+
+func (s *Session) Logout() {
+	s.m.quitSession(s.info.id)
+}
+
+func (s *Session) Role(role interface{}) error {
+	return nil
+}
+
+func (s *Session) Roles(roles interface{}) error {
+	return nil
 }
 
 type MongoSessParam struct {
@@ -104,10 +129,6 @@ func NewManager(param ManagerParam) *Manager {
 	m := &Manager{
 		param: param,
 	}
-	if m.param.MongoAccount.C == _EmptyString {
-		m.param.MongoAccount.C = "account"
-	}
-
 	return m
 }
 
@@ -150,6 +171,7 @@ func (m *Manager) createSession(info LoginInfo) (*Session, error) {
 		info:     info,
 		expireAt: time.Now().Add(m.expireTime),
 		tokenLen: m.param.TokenLength,
+		m:        m,
 	}
 	s.UpdateToken()
 	err := m.dbAccount.c.FindId(info.id).One(&info.Role)
@@ -170,7 +192,11 @@ func (m *Manager) createSession(info LoginInfo) (*Session, error) {
 	return nil, ErrPlayerNotFound
 }
 func (m *Manager) deleteSession(id uint32) {
+	m.quitSession(id)
 	m.dbRole.c.RemoveId(id)
+}
+
+func (m *Manager) quitSession(id uint32) {
 	m.sess.Delete(id)
 }
 func (m *Manager) getSession(id uint32) *Session {
@@ -190,59 +216,26 @@ type AccountInfo struct {
 }
 
 func (m *Manager) validateAccount(info LoginInfo) error {
-	passport := _EmptyString
-	password := _EmptyString
-	(&info).setIdFromRole()
-	s := m.getSession(info.id)
-	if s == nil {
-		acountInfo := AccountInfo{}
-		err := m.dbAccount.c.FindId(info.id).One(&acountInfo)
-		if err != nil {
-			return ErrAccountNotFound
-		}
-		passport = acountInfo.Passport
-		password = acountInfo.Password
-	} else {
-		passport = s.info.Passport
-		password = s.info.Password
+	if info.Passport == _EmptyString || info.Password == _EmptyString {
+		return ErrAccountInvalid
 	}
-	if passport == info.Passport &&
-		password == info.Password {
+	acountInfo := AccountInfo{}
+	err := m.dbAccount.c.FindId(info.id).One(&acountInfo)
+	if err != nil {
+		return ErrAccountNotFound
+	}
+	if acountInfo.Passport == info.Passport &&
+		acountInfo.Password == info.Password {
 		return nil
 	}
-	return nil
+	return ErrAccountInvalid
 }
 
-func (m *Manager) saveAccount(info LoginInfo) error {
-	return m.dbAccount.c.UpdateId(info.Passport, bson.M{
-		"$set": bson.M{
-			"roles." + strconv.Itoa(int(info.id)): info.Role,
-		},
-	})
-}
-
-func (m *Manager) Login(info LoginInfo) (*Session, error) {
+func (m *Manager) Get(info LoginInfo) (*Session, error) {
 	(&info).setIdFromRole()
-	if info.Visit {
-		s := m.getSession(info.id)
-		if s != nil && !s.hasExpired(info) {
-			return s, nil
-		}
-		return m.createSession(info)
-	} else {
-		err := m.validateAccount(info)
-		if err != nil {
-			return nil, err
-		}
-		s, err := m.createSession(info)
-		if err != nil {
-			return nil, err
-		}
-		err = m.saveAccount(s.info)
-		if err != nil {
-			m.deleteSession(s.info.id)
-			return nil, err
-		}
+	s := m.getSession(info.id)
+	if s != nil && !s.hasExpired(info) {
 		return s, nil
 	}
+	return m.createSession(info)
 }
