@@ -33,7 +33,6 @@ type Session struct {
 	info     AccountInfo
 	expireAt time.Time
 	tokenLen int
-	login    bool
 	m        *Manager
 	OnKick   func()
 	using    uint64
@@ -274,8 +273,8 @@ func (m *Manager) create() (s *Session, err error) {
 			err = c.Insert(a)
 			if err == nil {
 				s = &Session{
-					info:  a,
-					login: true,
+					info:   a,
+					OnKick: func() {},
 				}
 				return
 			}
@@ -347,6 +346,14 @@ func (m *Manager) getRoles(ids []uint64, roles interface{}) (err error) {
 	return
 }
 
+func (m *Manager) loginRet(s *Session, err error) {
+	if err != nil || s == nil {
+		m.sess.Delete(s.info.ID())
+	} else {
+		s.OnKick()
+	}
+}
+
 func (m *Manager) Login(pass AccountInfo) (s *Session, err error) {
 	switch pass.Type {
 	case AT_VISIT:
@@ -400,10 +407,10 @@ func (m *Manager) Login(pass AccountInfo) (s *Session, err error) {
 			return
 		}
 	}
-	s.login = true
+	m.loginRet(s, err)
 	return
 }
 
-func (m *Manager) Logout(id uint32) {
-
+func (m *Manager) Logout(s *Session) {
+	m.sess.Delete(s.info.ID())
 }
