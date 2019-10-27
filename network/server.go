@@ -1,15 +1,16 @@
 package network
 
 import (
+	"log"
 	"net"
 	"time"
 )
 
 type Server struct {
-	listener   net.Listener
+	l          net.Listener
 	network    string
 	addr       string
-	handler    func(*Agent, error)
+	handler    func(*Agent)
 	retryTimes int
 }
 
@@ -22,7 +23,7 @@ func NewServer(network, addr string) *Server {
 	}
 }
 
-func (s *Server) Handle(handler func(*Agent, error)) *Server {
+func (s *Server) Handle(handler func(*Agent)) *Server {
 	s.handler = handler
 	return s
 }
@@ -48,18 +49,20 @@ func (s *Server) initAgent(a *Agent) {
 }
 
 func (s *Server) Start() (err error) {
-	s.listener, err = net.Listen(s.network, s.addr)
+	log.Println("Start")
+	s.l, err = net.Listen(s.network, s.addr)
 	if err != nil {
 		return
 	}
+	log.Println(s.l)
 	for {
 		var conn net.Conn
-		conn, err = s.listener.Accept()
+		conn, err = s.l.Accept()
 		if err != nil {
 			return
 		}
 		a := NewAgent(conn)
-		s.handler(a, nil)
+		s.handler(a)
 		go s.initAgent(a)
 	}
 }

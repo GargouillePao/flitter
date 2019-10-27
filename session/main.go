@@ -8,13 +8,13 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
+
 	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
 )
 
 const _EmptyString string = ""
@@ -30,7 +30,7 @@ var (
 )
 
 type Session struct {
-	info     AccountInfo
+	Info     AccountInfo
 	expireAt time.Time
 	tokenLen int
 	m        *Manager
@@ -38,9 +38,8 @@ type Session struct {
 	using    uint64
 }
 
-func (s *Session) UseRole(role interface{}) (err error) {
-	id := reflect.ValueOf(role).FieldByName("Id").Uint()
-	err = s.m.getRole(id, role)
+func (s *Session) UseRole(id uint64) (role RoleInfo, err error) {
+	role, err = s.m.getRole(id)
 	if err != nil {
 		return
 	}
@@ -48,12 +47,8 @@ func (s *Session) UseRole(role interface{}) (err error) {
 	return
 }
 
-func (s *Session) GetRoles(roles interface{}) error {
-	return s.m.getRoles(s.info.Roles, roles)
-}
-
-func (s *Session) CreateRole(role interface{}) uint64 {
-	id := s.m.createRole(s.info, role)
+func (s *Session) CreateRole(role proto.Message) uint64 {
+	id := s.m.createRole(&s.Info, role)
 	if id > 0 {
 		s.using = id
 	}
@@ -61,7 +56,7 @@ func (s *Session) CreateRole(role interface{}) uint64 {
 }
 
 func (s *Session) DeleteRole(id uint64) {
-	s.m.deleteRole(s.info, id)
+	s.m.deleteRole(&s.Info, id)
 	if s.using == id {
 		s.using = 0
 	}
@@ -108,33 +103,40 @@ const (
 )
 
 type AccountInfo struct {
-	id          string   `bson:"_id"`
-	Platform    string   `bson:"platform"`
-	Type        AuthType `bson:"type"`
-	UserID      string   `bson:"user_id"`
-	Password    string   `bson:"password"`
-	AccessToken string   `bson:"access_token"`
-	IDToken     string   `bson:"id_token"`
-	Roles       []uint64 `bson:"roles"`
+	Id          string     `bson:"_id"`
+	Platform    string     `bson:"platform"`
+	Type        AuthType   `bson:"type"`
+	UserId      string     `bson:"user_id"`
+	Password    string     `bson:"password"`
+	AccessToken string     `bson:"access_token"`
+	IdToken     string     `bson:"id_token"`
+	Roles       []RoleInfo `bson:"roles"`
 }
 
-func (a *AccountInfo) ID() string {
+func (a AccountInfo) genId() string {
 	b := strings.Builder{}
 	b.WriteString(a.Platform)
 	b.WriteString("(")
-	b.WriteString(a.UserID)
+	b.WriteString(a.UserId)
 	b.WriteString(")")
-	a.id = b.String()
-	return a.id
+	return b.String()
 }
 
-func (a *AccountInfo) RandUserID() string {
+func (a AccountInfo) randUserID() AccountInfo {
 	b := strings.Builder{}
 	for i := 0; i < 18; i++ {
-		b.WriteByte(byte(10 + rand.Intn(88)))
+		switch rand.Intn(3) {
+		case 0:
+			b.WriteByte(byte(48 + rand.Intn(10)))
+		case 1:
+			b.WriteByte(byte(65 + rand.Intn(26)))
+		case 2:
+			b.WriteByte(byte(97 + rand.Intn(26)))
+		}
 	}
-	a.UserID = b.String()
-	return a.UserID
+	a.UserId = b.String()
+	a.Id = a.genId()
+	return a
 }
 
 type Manager struct {
@@ -244,38 +246,42 @@ func (m *Manager) authGet(platform string, param map[string]string) (jData map[s
 	return
 }
 
+func (m *Manager) newSession(a AccountInfo) (s *Session) {
+	s = &Session{
+		Info:   a,
+		m:      m,
+		OnKick: func() {},
+	}
+	return
+}
+
 func (m *Manager) get(a AccountInfo) (s *Session, err error) {
-	id := (&a).ID()
-	if v, ok := m.sess.Load(id); ok {
+	if v, ok := m.sess.Load(a.Id); ok {
 		s = v.(*Session)
 		return
 	}
 	c := m.dbAccount.c
 	if c != nil {
-		err = c.FindId(id).One(&a)
+		s = m.newSession(a)
+		err = c.FindId(a.Id).One(&s.Info)
 		if err != nil {
 			return
 		}
-		s.info = a
-		m.sess.Store(id, s)
+		m.sess.Store(a.Id, s)
 	} else {
 		err = ErrDBNotFound
 	}
 	return
 }
 
-func (m *Manager) create() (s *Session, err error) {
-	a := AccountInfo{}
+func (m *Manager) create(a AccountInfo) (s *Session, err error) {
 	c := m.dbAccount.c
 	if c != nil {
 		for i := 0; i < 20; i++ {
-			(&a).RandUserID()
+			a = a.randUserID()
 			err = c.Insert(a)
 			if err == nil {
-				s = &Session{
-					info:   a,
-					OnKick: func() {},
-				}
+				s = m.newSession(a)
 				return
 			}
 		}
@@ -287,23 +293,29 @@ func (m *Manager) create() (s *Session, err error) {
 	return
 }
 
-func (m *Manager) createRole(a AccountInfo, role interface{}) uint64 {
+type RoleInfo struct {
+	Id        uint64        `bson:"_id"`
+	AccountId string        `bson:"account_id"`
+	Brief     proto.Message `bson:"brief"`
+	Detail    proto.Message `bson:"detail"`
+}
+
+func (m *Manager) createRole(a *AccountInfo, brief proto.Message) uint64 {
 	rc := m.dbRole.c
 	ac := m.dbAccount.c
-	idf := reflect.ValueOf(role).FieldByName("Id")
-	uidf := reflect.ValueOf(role).FieldByName("accountId")
-	accountID := a.ID()
-	uidf.SetString(accountID)
+	role := RoleInfo{
+		AccountId: a.Id,
+		Brief:     brief,
+	}
 	if rc != nil && ac != nil {
 		for i := 0; i < 20; i++ {
-			id := rand.Uint64()
-			if id > 0 {
-				idf.SetUint(id)
+			role.Id = rand.Uint64()
+			if role.Id > 0 {
 				err := rc.Insert(role)
 				if err == nil {
-					a.Roles = append(a.Roles, id)
-					ac.UpdateId(accountID, a)
-					return id
+					a.Roles = append(a.Roles, role)
+					ac.UpdateId(a.Id, a)
+					return role.Id
 				}
 			}
 		}
@@ -311,54 +323,45 @@ func (m *Manager) createRole(a AccountInfo, role interface{}) uint64 {
 	return 0
 }
 
-func (m *Manager) deleteRole(a AccountInfo, id uint64) {
+func (m *Manager) deleteRole(a *AccountInfo, id uint64) {
 	rc := m.dbRole.c
 	ac := m.dbAccount.c
 	if rc != nil && ac != nil {
 		rc.RemoveId(id)
 		for i := 0; i < len(a.Roles); i++ {
-			if a.Roles[i] == id {
+			if a.Roles[i].Id == id {
 				a.Roles = append(a.Roles[:i-1], a.Roles[i+1:]...)
-				ac.UpdateId(a.ID(), a)
-				return
+				break
 			}
 		}
+		ac.UpdateId(a.Id, a)
 	}
 }
 
-func (m *Manager) getRole(id uint64, role interface{}) (err error) {
+func (m *Manager) getRole(id uint64) (role RoleInfo, err error) {
 	rc := m.dbRole.c
 	if rc != nil {
-		err = rc.FindId(id).One(role)
-	}
-	return
-}
-
-func (m *Manager) getRoles(ids []uint64, roles interface{}) (err error) {
-	rc := m.dbRole.c
-	if rc != nil {
-		err = rc.Find(bson.M{
-			"_id": bson.M{
-				"$in": ids,
-			},
-		}).All(roles)
+		err = rc.FindId(id).One(&role)
+	} else {
+		err = ErrDBNotFound
 	}
 	return
 }
 
 func (m *Manager) loginRet(s *Session, err error) {
 	if err != nil || s == nil {
-		m.sess.Delete(s.info.ID())
+		m.sess.Delete(s.Info.Id)
 	} else {
 		s.OnKick()
 	}
 }
 
 func (m *Manager) Login(pass AccountInfo) (s *Session, err error) {
+	pass.Id = pass.genId()
 	switch pass.Type {
 	case AT_VISIT:
-		if pass.UserID == _EmptyString {
-			s, err = m.create()
+		if pass.UserId == _EmptyString {
+			s, err = m.create(pass)
 		} else {
 			s, err = m.get(pass)
 		}
@@ -367,7 +370,7 @@ func (m *Manager) Login(pass AccountInfo) (s *Session, err error) {
 		if err != nil {
 			return
 		}
-		if s.info.Password != pass.Password {
+		if s.Info.Password != pass.Password {
 			err = ErrAccountInvalid
 			return
 		}
@@ -378,7 +381,7 @@ func (m *Manager) Login(pass AccountInfo) (s *Session, err error) {
 			return
 		}
 		data, _err := m.authGet(pass.Platform, map[string]string{
-			"openid":       pass.UserID,
+			"openid":       pass.UserId,
 			"access_token": pass.AccessToken,
 		})
 		if _err != nil {
@@ -396,13 +399,13 @@ func (m *Manager) Login(pass AccountInfo) (s *Session, err error) {
 			return
 		}
 		data, _err := m.authGet(pass.Platform, map[string]string{
-			"idtoken": pass.IDToken,
+			"idtoken": pass.IdToken,
 		})
 		if _err != nil {
 			err = _err
 			return
 		}
-		if data["userid"] != pass.UserID {
+		if data["userid"] != pass.UserId {
 			err = ErrAccountInvalid
 			return
 		}
@@ -412,5 +415,5 @@ func (m *Manager) Login(pass AccountInfo) (s *Session, err error) {
 }
 
 func (m *Manager) Logout(s *Session) {
-	m.sess.Delete(s.info.ID())
+	m.sess.Delete(s.Info.Id)
 }

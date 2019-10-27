@@ -14,22 +14,23 @@ const (
 	StrEmpty = ""
 )
 
-//GM GM
-type GM interface {
-	On(name string, cb func(...string))
-	Init() (err error)
-}
-
-type cmdGM struct {
+type GM struct {
 	handers  map[string]func(...string)
 	instance *readline.Instance
 }
 
-func (c *cmdGM) On(name string, cb func(...string)) {
+func (c *GM) On(name string, cb func(...string)) {
 	c.handers[name] = cb
 }
 
-func (c *cmdGM) Init() (err error) {
+func (c *GM) Trigger(name string, attrs ...string) (err error) {
+	if hcb, ok := c.handers[name]; ok {
+		hcb(attrs...)
+	}
+	return
+}
+
+func (c *GM) Init() (err error) {
 	pc := make([]readline.PrefixCompleterInterface, 0)
 	for hname := range c.handers {
 		pc = append(pc, readline.PcItem(hname))
@@ -68,14 +69,12 @@ func (c *cmdGM) Init() (err error) {
 				}
 			}
 		}
-		if hcb, ok := c.handers[hname]; ok {
-			hcb(hattrs...)
-		}
+		c.Trigger(hname, hattrs...)
 	}
 	return
 }
 
 //NewCmdGM NewCmdGM
-func NewCmdGM() GM {
-	return &cmdGM{handers: make(map[string]func(...string))}
+func NewCmdGM() *GM {
+	return &GM{handers: make(map[string]func(...string))}
 }
