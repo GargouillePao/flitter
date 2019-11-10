@@ -2,27 +2,35 @@ package network
 
 import (
 	"errors"
+	"log"
 	"net"
+
+	"github.com/gogo/protobuf/proto"
 )
 
 var (
 	ErrAgentClosed      error = errors.New("Error Agent Closed")
 	ErrEventNotRegister error = errors.New("Error Event Not Register")
+	ErrCantReceive      error = errors.New("Error Message Can Not Recv")
 )
 
 type Agent struct {
 	conn      net.Conn
-	handlers  map[uint32]func([]byte)
 	conncb    func()
 	disconncb func()
+	errcb     func(error)
 	mp        *Processor
 }
 
 func NewAgent(conn net.Conn) *Agent {
 	a := &Agent{
-		conn:     conn,
-		mp:       NewProcessor(conn),
-		handlers: make(map[uint32]func([]byte)),
+		conn:      conn,
+		mp:        NewProcessor(conn),
+		conncb:    func() {},
+		disconncb: func() {},
+		errcb: func(e error) {
+			log.Println(e)
+		},
 	}
 	return a
 }
@@ -35,15 +43,8 @@ func (a *Agent) Close() {
 	}
 }
 
-func (a *Agent) Processor() *Processor {
+func (a *Agent) MP() *Processor {
 	return a.mp
-}
-
-func (a *Agent) emit(head uint32, body []byte) {
-	h, ok := a.handlers[head]
-	if ok {
-		h(body)
-	}
 }
 
 func (a *Agent) handle() (err error) {
@@ -51,25 +52,20 @@ func (a *Agent) handle() (err error) {
 		err = ErrAgentClosed
 		return
 	}
-	head, body, err := a.mp.Read()
+	err = a.mp.handle()
 	if err != nil {
 		return
 	}
-	a.emit(head, body)
 	return
 }
 
-func (a *Agent) Send(head uint32, body []byte) (err error) {
+func (a *Agent) Send(msg proto.Message) (err error) {
 	if a.mp == nil {
 		err = ErrAgentClosed
 		return
 	}
-	err = a.mp.Write(head, body)
+	err = a.mp.send(msg)
 	return
-}
-
-func (a *Agent) On(head uint32, cb func([]byte)) {
-	a.handlers[head] = cb
 }
 
 func (a *Agent) OnConnect(cb func()) {

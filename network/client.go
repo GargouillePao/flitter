@@ -1,11 +1,18 @@
 package network
 
-import "net"
+import (
+	"net"
+	"reflect"
+	"sync"
+
+	"github.com/gogo/protobuf/proto"
+)
 
 type Client struct {
 	network string
 	addr    string
 	Agent
+	mutex sync.Mutex
 }
 
 func NewClient(network, addr string) *Client {
@@ -13,8 +20,24 @@ func NewClient(network, addr string) *Client {
 		network: network,
 		addr:    addr,
 	}
-	c.handlers = make(map[uint32]func([]byte))
 	return c
+}
+
+func (c *Client) Req(msg proto.Message, cb func(proto.Message)) error {
+	cbType := reflect.TypeOf(cb)
+	mp := c.Agent.mp
+	c.mutex.Lock()
+	ack := mp.GetIdByName(cbType.In(0).Name())
+	ok := mp.onNotify(ack, cb)
+	if !ok {
+		return ErrMsgNotRegistered
+	}
+	c.mutex.Unlock()
+	err := c.Agent.Send(msg)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *Client) Start() (err error) {

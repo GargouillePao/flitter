@@ -2,6 +2,7 @@ package gm
 
 import (
 	"io"
+	"reflect"
 	"strings"
 
 	"github.com/chzyer/readline"
@@ -21,6 +22,37 @@ type GM struct {
 
 func (c *GM) On(name string, cb func(...string)) {
 	c.handers[name] = cb
+}
+
+type Cmd interface {
+	Name() string
+}
+
+func (c *GM) AddCmd(cmd Cmd) {
+	cval := reflect.ValueOf(cmd)
+	for i := 0; i < cval.NumMethod(); i++ {
+		mt := cval.Method(i)
+		mn := mt.Type().Name()
+		onAt := strings.IndexAny(mn, "On")
+		if onAt == 0 {
+			rname := mn[onAt+2:]
+			rnamel := strings.ToLower(rname)
+			c.handers[cmd.Name()+" "+rnamel] = func(attrs ...string) {
+				nattrs := make([]reflect.Value, 0)
+				for _, attr := range attrs {
+					nattrs = append(nattrs, reflect.ValueOf(attr))
+				}
+				mt.Call(nattrs)
+			}
+			helpName := "Help" + rname
+			ht := cval.MethodByName(helpName)
+			if ht.IsNil() {
+				c.handers[cmd.Name()+" "+rnamel+" help"] = func(attrs ...string) {
+					ht.Call([]reflect.Value{})
+				}
+			}
+		}
+	}
 }
 
 func (c *GM) Trigger(name string, attrs ...string) (err error) {
